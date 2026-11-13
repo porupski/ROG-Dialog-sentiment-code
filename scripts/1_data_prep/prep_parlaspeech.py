@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """Slim down a ParlaSpeech utterance JSONL by dropping fields we never read.
 
-ParlaSpeech ships every row with words_align / graph_align / linguistic_annots payloads
-that can account for 2/3 of the file size and are useless for text-sentiment finetuning.
-This script streams the source JSONL, drops those fields, and writes a slim JSONL to
-data/ that the finetune_text engine (and anything else here) can read directly.
+ParlaSpeech v4 rows carry four bulky alignment/parse payloads that can account for the
+majority of the file size and are useless for text-sentiment finetuning:
+
+  words                  — per-word timing + char spans (time_s/time_e/char_s/char_e each)
+  linguistic_annotation  — full UD parse per token (lemma/upos/xpos/feats/head/deprel/misc)
+  chars_align            — char-level alignment (often null in SI, large when populated)
+  primary_stress         — primary-stress alignment (null in SI, large elsewhere)
+
+What we keep: id, audio, audio_length, text, text_start/end, audio_start/end, speaker_info,
+filled_pauses, silent_pauses (prosody-adjacent, small), sentiment (the label payload), cap.
 
 Default --src points at the ParlaSpeech-SI v4 raw JSONL under SSP's cache; override to
 retarget to any ParlaSpeech language.
@@ -29,8 +35,9 @@ DEFAULT_SRC = Path(
 )
 DEFAULT_OUT = ROOT / "data" / "parlaspeech_v4_si_utterance_instance.jsonl"
 
-# Known-heavy annotation fields that finetune_text never reads. Add here as more show up.
-DROP_FIELDS = ("words_align", "graph_align", "linguistic_annots")
+# Actual bulky fields in ParlaSpeech v4 schema. Override with --drop if a different language
+# uses different field names.
+DROP_FIELDS = ("words", "linguistic_annotation", "chars_align", "primary_stress")
 
 
 def human_bytes(n: int) -> str:
