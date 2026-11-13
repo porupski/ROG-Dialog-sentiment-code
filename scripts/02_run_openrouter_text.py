@@ -31,7 +31,7 @@ ROOT = HERE.parent
 
 SUBSET = ROOT / "data" / "subset_174_seed42_v2.jsonl"
 FEWSHOT = ROOT / "data" / "fewshot_pool_18_seed42_v2.jsonl"
-KEY_FILE = ROOT / "key.txt"
+KEY_FILE = ROOT / "misc" / "key.txt"
 RUNS_DIR = ROOT / "runs"
 SCRIPT_LOG = RUNS_DIR / "_script_log.jsonl"
 

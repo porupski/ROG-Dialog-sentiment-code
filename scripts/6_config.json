@@ -1,0 +1,60 @@
+{
+  "_readme": [
+    "Knobs for 06_finetune_text.py and run_06_matrix.py.",
+    "Layering: Config defaults -> 'shared' -> 'regression' -> modes[run_mode].",
+    "Every key must name a real Config field in utils_text_finetune.py (typos are hard errors).",
+    "",
+    "Run modes:",
+    "  - test  : tiny caps, 1 epoch — plumbing only, ~1 min per cell.",
+    "  - demo  : full backbones, moderate caps, 2 epochs — real-ish numbers in <30 min per cell.",
+    "  - full  : no caps, 4 epochs (ParlaSent paper settings) — the weekend run.",
+    "  - custom: bring your own overrides in modes.custom.",
+    "",
+    "Backbones (set via engine CLI --backbone or defaults in utils_text_finetune.BACKBONES):",
+    "  - FacebookAI/xlm-roberta-large   (generic multilingual pretrain)",
+    "  - classla/xlm-r-parla            (XLM-R + Slovenian parliamentary MLM continue-pretrain)",
+    "  - classla/xlm-r-parlasent        (xlm-r-parla + ParlaSent regression fine-tune)",
+    "",
+    "Mixtures (set via engine CLI --mixture, choose from utils_text_finetune.MIXTURES):",
+    "  S=parlasent_sl, P=parlaspeech_si, R=rog_dia, then pairs SP/SR/PR, and triple SPR"
+  ],
+
+  "run_mode": "full",
+
+  "shared": {
+    "max_length": 128,
+    "batch_size": 32,
+    "grad_accum": 1,
+    "learning_rate": 8e-6,
+    "num_epochs": 4,
+    "max_grad_norm": 1.0,
+    "warmup_ratio": 0.10,
+    "weight_decay": 0.01,
+    "dataloader_num_workers": 2,
+    "seed": 42,
+    "out_dir": "runs/finetune",
+    "reserved_gpu": "2"
+  },
+
+  "regression": {
+    "best_metric": "spearman",
+    "mix_mode": "concat"
+  },
+
+  "modes": {
+    "test": {
+      "cap_train": 128, "cap_dev": 32, "cap_test": 32,
+      "num_epochs": 1, "batch_size": 8
+    },
+    "demo": {
+      "cap_train": 4000, "cap_dev": 500, "cap_test": 1000,
+      "num_epochs": 2
+    },
+    "full": {
+      "cap_train": null, "cap_dev": null, "cap_test": null,
+      "num_epochs": 4
+    },
+    "custom": {
+    }
+  }
+}
