@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Slim a ParlaSpeech utterance JSONL and assign a speaker-disjoint train/dev/test split.
+"""Slim a ParlaSpeech utterance JSONL, cap + balance by 6-class label, split by speaker.
 
 ParlaSpeech v4 rows carry alignment/parse payloads that account for the majority of the
 file size and are useless for text-sentiment finetuning:
@@ -13,11 +13,19 @@ file size and are useless for text-sentiment finetuning:
 What we keep: id, audio, audio_length, text, text_start/end, audio_start/end, speaker_info,
 filled_pauses, silent_pauses (prosody-adjacent, small), sentiment (the label payload), cap.
 
-ParlaSpeech v4 ships WITHOUT a split field, so this script also assigns a speaker-disjoint
-80/10/10 train/dev/test split, grouped by speaker_info.Speaker_ID. Allocation walks speakers
-biggest-first (ties broken by seeded shuffle) and drops each one into whichever split has
-the largest row-count deficit vs its target — size-aware greedy packing. No sentiment-class
-stratification; the resulting per-split class distribution is printed so skew is visible.
+Processing order:
+  1. Stream rows in (keep `words` so we can count length).
+  2. Filter 10 ≤ len(words) ≤ 40  — matches ROG-Dialog's utterance-length distribution
+     and avoids both "ok" one-liners and multi-minute monologues that drift off-topic.
+  3. Balance-sample up to N per 6-class ParlaSent_6 label (default 1000 → 6k total cap).
+     If a class has fewer than N instances we take all of them. Seeded.
+  4. Drop the heavy fields listed above.
+  5. Assign a speaker-disjoint 80/10/10 split (speaker_info.Speaker_ID grouped, size-aware
+     greedy packing).
+  6. Write.
+
+ParlaSpeech labels are inferred by XLM-R-ParlaSent itself, so fine-tuning *XLM-R-ParlaSent*
+on them is self-labeled training. Note this when reading matrix results.
 
 Default --src points at the ParlaSpeech-SI v4 raw JSONL under SSP's cache; override to
 retarget to any ParlaSpeech language.
@@ -27,7 +35,7 @@ Usage:
   python3 scripts/1_data_prep/prep_parlaspeech.py \\
       --src  /path/to/ParlaSpeech-XX.vN.0.jsonl \\
       --out  data/parlaspeech_vN_xx_utterance_instance.jsonl \\
-      --train-frac 0.8 --dev-frac 0.1 --seed 42
+      --cap-per-class 1000 --min-words 10 --max-words 40 --seed 42
 """
 
 import argparse
@@ -54,6 +62,7 @@ DROP_FIELDS = (
 )
 
 UNKNOWN_SPEAKER = "_unknown_speaker"
+UNKNOWN_LABEL = "_unknown_label"
 
 
 def human_bytes(n: int) -> str:
@@ -63,6 +72,26 @@ def human_bytes(n: int) -> str:
         if f < 1024 or u == units[-1]:
             return f"{f:.1f} {u}"
         f /= 1024
+
+
+def word_count(row: dict) -> int:
+    """Count words from the `words` array when available (authoritative word segmentation
+    from ParlaSpeech's forced alignment); fall back to whitespace split on text."""
+    w = row.get("words")
+    if isinstance(w, list):
+        return len(w)
+    t = row.get("text") or ""
+    return len(t.split())
+
+
+def label_6(row: dict) -> str:
+    s = (row.get("sentiment") or {}).get("ParlaSent_6")
+    return str(s) if s is not None else UNKNOWN_LABEL
+
+
+def label_3(row: dict) -> str:
+    s = (row.get("sentiment") or {}).get("ParlaSent_3")
+    return str(s) if s is not None else "∅"
 
 
 def speaker_id_for(row: dict) -> str:
@@ -77,6 +106,24 @@ def speaker_id_for(row: dict) -> str:
     if isinstance(rid, str):
         return rid.rsplit(".", 2)[0]
     return UNKNOWN_SPEAKER
+
+
+def balance_sample(rows: list[dict], cap_per_class: int, seed: int) -> list[dict]:
+    """Group by ParlaSent_6 label, shuffle each group deterministically, take up to
+    cap_per_class from each. Rows with no label are dropped (the model needs one)."""
+    by_label: dict[str, list[dict]] = defaultdict(list)
+    for r in rows:
+        lbl = label_6(r)
+        if lbl == UNKNOWN_LABEL:
+            continue
+        by_label[lbl].append(r)
+    rng = random.Random(seed)
+    out: list[dict] = []
+    for lbl, group in by_label.items():
+        rng.shuffle(group)
+        out.extend(group[:cap_per_class])
+    rng.shuffle(out)                 # mix classes so split allocation doesn't see blocks
+    return out
 
 
 def assign_splits(rows: list[dict], train_frac: float, dev_frac: float, seed: int) -> dict:
@@ -103,7 +150,6 @@ def assign_splits(rows: list[dict], train_frac: float, dev_frac: float, seed: in
     items.sort(key=lambda kv: -len(kv[1]))   # biggest-first; sort is stable so shuffle holds
 
     for sid, srows in items:
-        # Pick the split with the biggest row-count deficit vs its target.
         best = max(counts, key=lambda s: targets[s] - counts[s])
         for r in srows:
             r["split"] = best
@@ -116,14 +162,6 @@ def assign_splits(rows: list[dict], train_frac: float, dev_frac: float, seed: in
     }
 
 
-def label_bucket(row: dict) -> str:
-    """Return the 3-class ParlaSent collapse string for reporting, or '∅' if absent."""
-    s = (row.get("sentiment") or {}).get("ParlaSent_3")
-    if s is None:
-        return "∅"
-    return str(s)
-
-
 def main():
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--src", type=Path, default=DEFAULT_SRC,
@@ -132,6 +170,14 @@ def main():
                    help=f"output slim JSONL (default: {DEFAULT_OUT.relative_to(ROOT)})")
     p.add_argument("--drop", nargs="*", default=list(DROP_FIELDS),
                    help=f"top-level fields to drop (default: {' '.join(DROP_FIELDS)})")
+    p.add_argument("--min-words", type=int, default=10,
+                   help="drop utterances with fewer than N words (default 10)")
+    p.add_argument("--max-words", type=int, default=40,
+                   help="drop utterances with more than N words (default 40)")
+    p.add_argument("--cap-per-class", type=int, default=1000,
+                   help="max rows to keep per ParlaSent_6 label (default 1000 → 6k total)")
+    p.add_argument("--no-cap", action="store_true",
+                   help="disable class cap entirely (writes everything that passes the word filter)")
     p.add_argument("--train-frac", type=float, default=0.80)
     p.add_argument("--dev-frac",   type=float, default=0.10)
     p.add_argument("--seed",       type=int,   default=42)
@@ -147,27 +193,53 @@ def main():
     print(f"src: {args.src}  ({human_bytes(src_bytes)})")
     print(f"out: {args.out}")
     print(f"dropping fields: {sorted(drop)}")
+    print(f"word-count filter: {args.min_words} .. {args.max_words}")
+    print(f"cap per ParlaSent_6 class: {'∞ (no-cap)' if args.no_cap else args.cap_per_class}")
 
-    # Pass 1: stream + slim into memory. The slimmed file for SI fits comfortably; if a
-    # much larger corpus ever outgrows RAM, rework into a two-pass variant that assigns
-    # splits from a speaker→split map built in pass 1 and written in pass 2.
+    # Pass 1: stream in. Keep the whole row (words included) so we can count length;
+    # drop heavy fields later, once we've decided which rows survive.
     rows: list[dict] = []
-    n_fields_stripped = 0
+    n_in = 0
     with open(args.src) as fin:
         for line in fin:
             if not line.strip():
                 continue
-            row = json.loads(line)
-            for k in drop:
-                if k in row:
-                    del row[k]
-                    n_fields_stripped += 1
-            rows.append(row)
+            n_in += 1
+            rows.append(json.loads(line))
+    print(f"read: {n_in} rows")
 
-    n_in = len(rows)
-    print(f"read: {n_in} rows, stripped {n_fields_stripped} field occurrences")
+    # Word-length filter.
+    kept = [r for r in rows if args.min_words <= word_count(r) <= args.max_words]
+    print(f"word-filter kept: {len(kept)} of {n_in} ({100 * len(kept) / max(1, n_in):.1f}%)")
 
-    split_info = assign_splits(rows, args.train_frac, args.dev_frac, args.seed)
+    # Per-6cls counts BEFORE cap (so we know how much headroom each class has).
+    pre_cap_counts = Counter(label_6(r) for r in kept)
+    print("pre-cap counts (ParlaSent_6):")
+    for lbl, c in sorted(pre_cap_counts.items()):
+        print(f"  {lbl:20s}: {c}")
+
+    # Class cap + balance.
+    if args.no_cap:
+        capped = [r for r in kept if label_6(r) != UNKNOWN_LABEL]
+    else:
+        capped = balance_sample(kept, args.cap_per_class, args.seed)
+    post_cap_counts = Counter(label_6(r) for r in capped)
+    print(f"post-cap total: {len(capped)}")
+    print("post-cap counts (ParlaSent_6):")
+    for lbl, c in sorted(post_cap_counts.items()):
+        print(f"  {lbl:20s}: {c}")
+
+    # Drop heavy fields on the surviving rows.
+    n_fields_stripped = 0
+    for r in capped:
+        for k in drop:
+            if k in r:
+                del r[k]
+                n_fields_stripped += 1
+    print(f"stripped {n_fields_stripped} heavy-field occurrences from {len(capped)} rows")
+
+    # Speaker-disjoint split.
+    split_info = assign_splits(capped, args.train_frac, args.dev_frac, args.seed)
     counts = split_info["counts"]
     print(f"speakers: {split_info['n_speakers']}")
     print(f"split targets: {split_info['targets']}")
@@ -175,8 +247,8 @@ def main():
 
     # Per-split × per-ParlaSent_3 distribution for a sanity eyeball.
     dist: dict[str, Counter] = {"train": Counter(), "dev": Counter(), "test": Counter()}
-    for r in rows:
-        dist[r["split"]][label_bucket(r)] += 1
+    for r in capped:
+        dist[r["split"]][label_3(r)] += 1
     print("per-split ParlaSent_3 distribution:")
     for split in ("train", "dev", "test"):
         total = counts[split] or 1
@@ -184,12 +256,12 @@ def main():
         print(f"  {split:5s}: {' '.join(parts)}")
 
     with open(args.out, "w") as fout:
-        for row in rows:
+        for row in capped:
             fout.write(json.dumps(row, ensure_ascii=False) + "\n")
 
     out_bytes = args.out.stat().st_size
     ratio = (1 - out_bytes / src_bytes) * 100 if src_bytes else 0.0
-    print(f"wrote {n_in} rows -> {args.out}")
+    print(f"wrote {len(capped)} rows -> {args.out}")
     print(f"size in={human_bytes(src_bytes)}  out={human_bytes(out_bytes)}  "
           f"saved {ratio:.1f} %")
 
