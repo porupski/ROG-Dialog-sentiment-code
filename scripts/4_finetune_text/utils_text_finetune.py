@@ -68,10 +68,11 @@ def _reader_rog_dia_full(row: dict) -> dict | None:
 
 
 def _reader_parlaspeech_si(row: dict) -> dict | None:
-    """ParlaSpeech-SI `utterance_instance` (SSP 11c output). `sentiment.ParlaSent_logit`
-    is the ParlaSent model's own regression output on the parliamentary audio
-    transcript — sits approximately on the ParlaSent 0..5 ordinal scale
-    (e.g. 3.162 → NeutralPositive). Used directly as our label."""
+    """ParlaSpeech-SI slim JSONL (prep_parlaspeech.py output). `sentiment.ParlaSent_logit`
+    is the ParlaSent model's own regression output on the parliamentary audio transcript —
+    sits approximately on the ParlaSent 0..5 ordinal scale (e.g. 3.162 → NeutralPositive).
+    Used directly as our label. The `split` field is added by prep_parlaspeech.py (speaker-
+    disjoint 80/10/10)."""
     sent = row.get("sentiment") or {}
     logit = sent.get("ParlaSent_logit")
     if logit is None:
@@ -80,7 +81,7 @@ def _reader_parlaspeech_si(row: dict) -> dict | None:
         "text": row.get("text") or row.get("sentence") or "",
         "label_scalar": float(logit),
         "split": row.get("split", "train"),
-        "instance_id": row.get("instance_id") or f"ParlaSpeech-SI_{row.get('file_id','?')}_{row.get('start_t','?')}",
+        "instance_id": row.get("id") or row.get("instance_id") or "ParlaSpeech-SI_?",
     }
 
 

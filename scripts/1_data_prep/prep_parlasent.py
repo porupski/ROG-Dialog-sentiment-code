@@ -2,29 +2,41 @@
 """Download and convert ParlaSent 1.0 into our canonical per-instance JSONL schema.
 
 ParlaSent 1.0 is a 7-language parliamentary-sentence corpus manually annotated with
-a 6-level sentiment schema (Negative / M_Negative / N_Negative / N_Positive /
-M_Positive / Positive). Source: CLARIN.SI handle 11356/1868.
+a six-level sentiment schema (Batanović et al. 2020). Source: CLARIN.SI handle 11356/1868.
 
-Downloads 8 files (~7.4 MB total) into misc/parlasent_raw/, then emits one
-canonical JSONL per language into data/ in the same shape ROG-Dialog v2 uses,
-so 4_finetune_text/finetune_text.py / analyze_results.py can treat them uniformly.
+The six raw labels per Mochtak et al. 2023 §3.4:
+  Negative   (−1)  predominantly negative
+  M_Negative (−M)  mixed, leans negative
+  N_Neutral  (−NS) non-sentiment statement, leans negative
+  P_Neutral  (+NS) non-sentiment statement, leans positive
+  M_Positive (+M)  mixed, leans positive
+  Positive   (+1)  predominantly positive
+
+The published `label` field is the **3-class** collapse ("neutral / negative / positive"),
+NOT a 6-level label — so reading it as 6-level drops ~half the corpus. The 6-level signal
+lives in `reconciliation` (populated for all training rows, consensus after disagreement
+discussion) with `annotator1` as the fallback on the _test.jsonl files that ship with a
+single annotator only.
+
+Downloads 8 files (~7.4 MB total) into misc/parlasent_raw/, then emits one canonical
+JSONL per language into data/ in the same shape ROG-Dialog v2 uses, so
+4_finetune_text/finetune_text.py / analyze_results.py can treat them uniformly.
 
 Schema mapping (source -> canonical):
-  sentence        -> text
-  country         -> country (preserved as-is; "HR"/"SR"/"BA" in the BCS pool, etc.)
-  label           -> sentiment  (predominantlyNegative … predominantlyPositive)
-                   + sentiment_3 (negative / neutral / positive, same collapse as 01)
-                   + sentiment_6_ord (0..5)
-                   + sentiment_3_ord (0..2)
-  split           -> split  (train / dev / test; already present per row)
-  document_id     -> file_id
-  sentence_id     -> plus document_id into instance_id
-  name/party/     -> preserved under metadata
-  gender/age/etc.
+  sentence                       -> text
+  country                        -> country (preserved as-is)
+  reconciliation|annotator1      -> sentiment      (predominantlyNegative ... predominantlyPositive)
+                                 + sentiment_3    (negative / neutral / positive)
+                                 + sentiment_6_ord (0..5)
+                                 + sentiment_3_ord (0..2)
+  (published `label`)            -> metadata.published_3class_label (kept for audit)
+  split                          -> split  (train / dev / test; already present per row)
+  document_id                    -> file_id
+  sentence_id                    -> plus document_id into instance_id
+  name/party/gender/age/etc.     -> preserved under metadata
 
 Multi-run safe: existing downloads are skipped unless --redownload is passed.
-Idempotent conversion: existing <lang>_instance.jsonl is overwritten on each run
-(cheap) — rerun whenever label mapping evolves.
+Idempotent conversion: existing <lang>_instance.jsonl is overwritten on each run.
 """
 
 import argparse
@@ -57,13 +69,18 @@ SOURCES = [
 AUX = ["README.txt"]
 
 LABEL_6_MAP = {
-    "Negative":   "predominantlyNegative",
-    "M_Negative": "mixedNegative",
-    "N_Negative": "neutralNegative",
-    "N_Positive": "neutralPositive",
-    "M_Positive": "mixedPositive",
-    "Positive":   "predominantlyPositive",
+    "Negative":   "predominantlyNegative",   # −1
+    "M_Negative": "mixedNegative",           # −M
+    "N_Neutral":  "neutralNegative",         # −NS (non-sentiment, leans negative)
+    "P_Neutral":  "neutralPositive",         # +NS (non-sentiment, leans positive)
+    "M_Positive": "mixedPositive",           # +M
+    "Positive":   "predominantlyPositive",   # +1
 }
+
+# Fields to try, in order, when sourcing the 6-level label. Training files carry
+# `reconciliation` (consensus after disagreement discussion); the single-annotator
+# _test files only carry `annotator1`.
+LABEL_6_FIELDS = ("reconciliation", "annotator1", "annotator2")
 LABELS_6_ORDER = [
     "predominantlyNegative", "mixedNegative", "neutralNegative",
     "neutralPositive",       "mixedPositive", "predominantlyPositive",
@@ -92,25 +109,40 @@ def download(fname: str, dest: Path, redownload: bool) -> None:
     print(f"         -> {out} ({out.stat().st_size:,} B)")
 
 
+def pick_six_level(r: dict) -> tuple[str | None, str | None]:
+    """Return (raw_6level_label, source_field) using LABEL_6_FIELDS fallback order.
+    Only accepts values present in LABEL_6_MAP so a stray 3-class string (e.g. the
+    published `label`) can't accidentally shadow the real 6-level field."""
+    for field in LABEL_6_FIELDS:
+        v = r.get(field)
+        if isinstance(v, str) and v in LABEL_6_MAP:
+            return v, field
+    return None, None
+
+
 def convert_one(src: Path, out: Path, out_stem: str) -> dict:
     """Emit the canonical per-instance JSONL. Returns a small summary dict."""
     out.parent.mkdir(parents=True, exist_ok=True)
-    stats = {"total": 0, "skipped_null_label": 0, "unknown_label": 0,
-             "per_split": {"train": 0, "dev": 0, "test": 0, "other": 0}}
+    stats = {
+        "total": 0,
+        "skipped_no_6level": 0,
+        "per_split": {"train": 0, "dev": 0, "test": 0, "other": 0},
+        "label_source_counts": {f: 0 for f in LABEL_6_FIELDS},
+    }
     with open(src) as fin, open(out, "w") as fout:
         for line in fin:
             if not line.strip():
                 continue
             r = json.loads(line)
             stats["total"] += 1
-            label = r.get("label")
-            if label is None:
-                stats["skipped_null_label"] += 1
+
+            raw_6, src_field = pick_six_level(r)
+            if raw_6 is None:
+                stats["skipped_no_6level"] += 1
                 continue
-            sent6 = LABEL_6_MAP.get(label)
-            if sent6 is None:
-                stats["unknown_label"] += 1
-                continue
+            stats["label_source_counts"][src_field] += 1
+
+            sent6 = LABEL_6_MAP[raw_6]
             sent3 = SENT_6_TO_3[sent6]
             split = r.get("split", "other")
             if split not in stats["per_split"]:
@@ -135,7 +167,9 @@ def convert_one(src: Path, out: Path, out_stem: str) -> dict:
                 "sentiment_6_ord": SENT_6_ORD[sent6],
                 "sentiment_3_ord": SENT_3_ORD[sent3],
                 "metadata": {
-                    "label_raw": label,
+                    "label_6_raw": raw_6,
+                    "label_6_source": src_field,
+                    "published_3class_label": r.get("label"),
                     "reconciliation": r.get("reconciliation"),
                     "annotator1": r.get("annotator1"),
                     "annotator2": r.get("annotator2"),
@@ -176,15 +210,20 @@ def main():
             continue
         out = OUT_DIR / f"{out_stem}_instance.jsonl"
         stats = convert_one(src, out, out_stem)
-        summary[out_stem] = {"rows": stats["total"] - stats["skipped_null_label"] - stats["unknown_label"],
-                             "splits": stats["per_split"],
-                             "skipped_null_label": stats["skipped_null_label"],
-                             "unknown_label": stats["unknown_label"]}
-        s = summary[out_stem]
-        print(f"  {out_stem}: kept={s['rows']} "
-              f"(train={s['splits']['train']}, dev={s['splits']['dev']}, "
-              f"test={s['splits']['test']}, other={s['splits']['other']})"
-              f"  dropped_null={s['skipped_null_label']}  unknown_lbl={s['unknown_label']}")
+        kept = stats["total"] - stats["skipped_no_6level"]
+        summary[out_stem] = {
+            "rows": kept,
+            "splits": stats["per_split"],
+            "skipped_no_6level": stats["skipped_no_6level"],
+            "label_source_counts": stats["label_source_counts"],
+        }
+        src_counts = stats["label_source_counts"]
+        print(f"  {out_stem}: kept={kept} "
+              f"(train={stats['per_split']['train']}, dev={stats['per_split']['dev']}, "
+              f"test={stats['per_split']['test']}, other={stats['per_split']['other']})"
+              f"  skipped_no_6level={stats['skipped_no_6level']}"
+              f"  source=rec:{src_counts['reconciliation']}/"
+              f"a1:{src_counts['annotator1']}/a2:{src_counts['annotator2']}")
 
     report = OUT_DIR / "parlasent_prep_report.json"
     report.write_text(json.dumps(summary, indent=2, ensure_ascii=False))
