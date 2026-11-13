@@ -1,6 +1,6 @@
 {
   "_readme": [
-    "Knobs for 06_finetune_text.py and run_06_matrix.py.",
+    "Knobs for finetune_text.py and run_matrix.py.",
     "Layering: Config defaults -> 'shared' -> 'regression' -> modes[run_mode].",
     "Every key must name a real Config field in utils_text_finetune.py (typos are hard errors).",
     "",
@@ -16,7 +16,11 @@
     "  - classla/xlm-r-parlasent        (xlm-r-parla + ParlaSent regression fine-tune)",
     "",
     "Mixtures (set via engine CLI --mixture, choose from utils_text_finetune.MIXTURES):",
-    "  S=parlasent_sl, P=parlaspeech_si, R=rog_dia, then pairs SP/SR/PR, and triple SPR"
+    "  S=parlasent_sl, P=parlaspeech_si, R=rog_dia, then pairs SP/SR/PR, and triple SPR",
+    "",
+    "mixture_overrides: applied AFTER modes[run_mode], so S can get 10 epochs under 'full'",
+    "while leaving the multi-source mixtures at 4. Matches the ParlaSent paper's recipe",
+    "(10 epochs monolingual, 4 multilingual, Mochtak et al. 2023)."
   ],
 
   "run_mode": "full",
@@ -56,5 +60,9 @@
     },
     "custom": {
     }
+  },
+
+  "mixture_overrides": {
+    "S": { "num_epochs": 10 }
   }
 }

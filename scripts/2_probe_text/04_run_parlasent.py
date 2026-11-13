@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent
+ROOT = HERE.parent.parent
 
 SUBSET = ROOT / "data" / "subset_174_seed42_v2.jsonl"
 FULL_DATA = ROOT / "data" / "rog_dialog_v2_instance.jsonl"
@@ -522,7 +522,7 @@ def main():
         }, ensure_ascii=False) + "\n")
 
     print(f"\nDone. Batch: {batch_dir.relative_to(ROOT)}")
-    print(f"Analyze with: python3 scripts/03_analyze_results.py {batch_dir}")
+    print(f"Analyze with: python3 scripts/analyze_results.py {batch_dir}")
 
 
 if __name__ == "__main__":

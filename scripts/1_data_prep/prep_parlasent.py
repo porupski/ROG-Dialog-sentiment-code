@@ -7,7 +7,7 @@ M_Positive / Positive). Source: CLARIN.SI handle 11356/1868.
 
 Downloads 8 files (~7.4 MB total) into misc/parlasent_raw/, then emits one
 canonical JSONL per language into data/ in the same shape ROG-Dialog v2 uses,
-so 06_finetune_text.py / 03_analyze_results.py can treat them uniformly.
+so 4_finetune_text/finetune_text.py / analyze_results.py can treat them uniformly.
 
 Schema mapping (source -> canonical):
   sentence        -> text
@@ -34,7 +34,7 @@ import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent
+ROOT = HERE.parent.parent
 
 RAW_DIR = ROOT / "misc" / "parlasent_raw"
 OUT_DIR = ROOT / "data"

@@ -178,11 +178,23 @@ def _load_jsonl(path: Path):
                 yield json.loads(line)
 
 
+def source_available(src_name: str, root: Path) -> bool:
+    return (root / SOURCES[src_name]["path"]).exists()
+
+
+def missing_sources(src_names: list[str], root: Path) -> list[str]:
+    return [s for s in src_names if not source_available(s, root)]
+
+
 def load_source(src_name: str, root: Path) -> list[dict]:
+    """Return instances for a source. If the backing JSONL is missing, warn and return [].
+    Callers treat empty as 'drop this source' so a missing local dataset degrades the
+    mixture gracefully instead of aborting the whole run."""
     meta = SOURCES[src_name]
     p = root / meta["path"]
     if not p.exists():
-        raise SystemExit(f"Missing source JSONL for '{src_name}': {p}. Run the matching prep script.")
+        print(f"  [warn] missing source JSONL for '{src_name}': {p} — skipping.")
+        return []
     out = []
     for row in _load_jsonl(p):
         rec = meta["reader"](row)
@@ -201,12 +213,18 @@ def split_rows(rows: list[dict], split: str) -> list[dict]:
 
 def mix_train(cfg: Config, root: Path, rng_seed: int = 42):
     """Return (train_rows, dev_rows). Dev = each source's dev split; if any source has no
-    dev, carve 10 % of its own train."""
+    dev, carve 10 % of its own train. Sources whose JSONL is missing contribute nothing;
+    if ALL sources in the mixture are missing, raises SystemExit so the runner can
+    record the cell as skipped."""
     import random
     rng = random.Random(rng_seed)
     train_all, dev_all = [], []
+    contributed = []
     for src in MIXTURES[cfg.mixture]:
         rows = load_source(src, root)
+        if not rows:
+            continue
+        contributed.append(src)
         t = split_rows(rows, "train")
         d = split_rows(rows, "dev")
         if not d:
@@ -216,6 +234,11 @@ def mix_train(cfg: Config, root: Path, rng_seed: int = 42):
         train_all.extend(t)
         dev_all.extend(d)
         print(f"  [{src}] train={len(t):>6} dev={len(d):>5}")
+    if not contributed:
+        raise SystemExit(
+            f"Mixture '{cfg.mixture}' has no available sources ({MIXTURES[cfg.mixture]}). "
+            f"Run the matching prep script(s) or pick a different mixture."
+        )
     if cfg.mix_mode == "balanced":
         # Downsample each source to the size of the smallest contributing train split.
         by_src = {}
@@ -237,8 +260,13 @@ def mix_train(cfg: Config, root: Path, rng_seed: int = 42):
 
 
 def load_test_sets(cfg: Config, root: Path) -> dict[str, list[dict]]:
+    """Missing eval sources (JSONL absent) are silently dropped from the returned dict so
+    the engine only evaluates on sources that are actually present."""
     out = {}
     for src in cfg.eval_sources:
+        if not source_available(src, root):
+            print(f"  [test:{src}] unavailable — skipping eval on this source.")
+            continue
         rows = load_source(src, root)
         test = split_rows(rows, "test")
         if cfg.cap_test is not None:
@@ -325,22 +353,38 @@ def compute_metrics_from_preds(y_gold_raw: list[float], y_pred_raw: list[float])
     acc6 = sum(a == b for a, b in zip(g6, p6)) / n
     acc3 = sum(a == b for a, b in zip(g3, p3)) / n
 
-    def macro_f1(y_true, y_pred, k):
-        f1s = []
+    def per_class_prf(y_true, y_pred, k):
+        """Returns (precisions, recalls, f1s) each of length k."""
+        precs, recs, f1s = [], [], []
         for c in range(k):
             tp = sum(1 for t, p in zip(y_true, y_pred) if t == c and p == c)
             fp = sum(1 for t, p in zip(y_true, y_pred) if t != c and p == c)
             fn = sum(1 for t, p in zip(y_true, y_pred) if t == c and p != c)
             prec = tp / (tp + fp) if (tp + fp) else 0.0
             rec = tp / (tp + fn) if (tp + fn) else 0.0
+            precs.append(prec)
+            recs.append(rec)
             f1s.append(2 * prec * rec / (prec + rec) if (prec + rec) else 0.0)
-        return sum(f1s) / k
+        return precs, recs, f1s
+
+    prec6, rec6, f1_6 = per_class_prf(g6, p6, 6)
+    prec3, rec3, f1_3 = per_class_prf(g3, p3, 3)
 
     return {
         "n": n,
         "mae": mae, "r2": r2, "spearman": sp,
-        "acc_6cls": acc6, "macro_f1_6cls": macro_f1(g6, p6, 6),
-        "acc_3cls": acc3, "macro_f1_3cls": macro_f1(g3, p3, 3),
+        "acc_6cls": acc6, "macro_f1_6cls": sum(f1_6) / 6,
+        "acc_3cls": acc3, "macro_f1_3cls": sum(f1_3) / 3,
+        # Per-class breakdown — important for the ParlaSent minority-positive calibration
+        # check flagged in the lit review (Mochtak et al. 2023: only 7% positive in SL).
+        "per_class_recall_6cls": rec6,
+        "per_class_recall_3cls": rec3,
+        "per_class_precision_6cls": prec6,
+        "per_class_precision_3cls": prec3,
+        "per_class_f1_6cls": f1_6,
+        "per_class_f1_3cls": f1_3,
+        # Convenience alias: recall for the 3-class positive bucket (index 2).
+        "minority_positive_recall": rec3[2] if len(rec3) == 3 else None,
     }
 
 
@@ -425,13 +469,20 @@ def run_training(cfg: Config, root: Path, out_dir: Path):
         remove_unused_columns=True,
         seed=cfg.seed,
     )
-    trainer = Trainer(
+    # `tokenizer=` was deprecated in transformers 4.46+ in favour of `processing_class=`.
+    # We try the new keyword first and fall back for older installs.
+    import inspect
+    trainer_kwargs = dict(
         model=model, args=args,
         train_dataset=train_ds, eval_dataset=dev_ds,
-        tokenizer=tok,
         data_collator=DataCollatorWithPadding(tok),
         compute_metrics=compute_metrics_hf,
     )
+    if "processing_class" in inspect.signature(Trainer.__init__).parameters:
+        trainer_kwargs["processing_class"] = tok
+    else:
+        trainer_kwargs["tokenizer"] = tok
+    trainer = Trainer(**trainer_kwargs)
 
     t0 = time.time()
     trainer.train()
@@ -470,9 +521,11 @@ def run_training(cfg: Config, root: Path, out_dir: Path):
                     "gold_3cls": LABELS_3[g3], "pred_3cls": LABELS_3[p3],
                 }, ensure_ascii=False) + "\n")
         rho_s = "n/a" if metrics["spearman"] is None else f"{metrics['spearman']:.3f}"
+        rec3 = metrics["per_class_recall_3cls"]
         print(f"    -> {pred_path.relative_to(root)}: "
+              f"R²={metrics['r2']:.3f} ρ={rho_s} MAE={metrics['mae']:.3f} "
               f"F1_6cls={metrics['macro_f1_6cls']:.3f} F1_3cls={metrics['macro_f1_3cls']:.3f} "
-              f"ρ={rho_s} MAE={metrics['mae']:.3f}")
+              f"| rec_3cls neg/neu/pos = {rec3[0]:.2f}/{rec3[1]:.2f}/{rec3[2]:.2f}")
 
     summary = {
         "run_tag": tag,

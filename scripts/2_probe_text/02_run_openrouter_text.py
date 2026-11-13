@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
-"""Run 8 text-sentiment configs via OpenRouter on the fixed 174-instance subset.
+"""Run text-sentiment configs via OpenRouter on the fixed 174-instance subset.
 
-Configs: {haiku, flash} x {0shot, fshot} x {6cls, 3cls}, all iso context.
-Models: anthropic/claude-haiku-4.5, google/gemini-2.5-flash.
+Configs: {haiku, flash, gpt4o, gpt5} x {0shot, fshot} x {6cls, 3cls}, all iso context.
+Models:
+  anthropic/claude-haiku-5.5
+  google/gemini-3.8-flash
+  openai/gpt-4o-2024-11-20   — pinned snapshot for lit-review comparison. ParlaSpeech 3.0
+      (Ljubešić et al., LREC 2026) reports GPT-4o parliamentary mean Spearman 0.807 vs
+      ParlaSent 0.786 — this is the slug closest to that measurement.
+  openai/gpt-5                — sliding current frontier; included to see whether
+      newer OpenAI models have moved toward or away from Slavic sentiment.
 
 Prompts are identical across the two models for a given (shot_mode, class_scheme) pair.
 For few-shot, the same 18 fixed examples (3/class from train) are prepended as user/assistant turns;
@@ -27,7 +34,7 @@ from pathlib import Path
 import requests
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent
+ROOT = HERE.parent.parent
 
 SUBSET = ROOT / "data" / "subset_174_seed42_v2.jsonl"
 FEWSHOT = ROOT / "data" / "fewshot_pool_18_seed42_v2.jsonl"
@@ -48,6 +55,13 @@ OR_URL = "https://openrouter.ai/api/v1/chat/completions"
 MODELS = {
     "haiku": "anthropic/claude-haiku-5.5",
     "flash": "google/gemini-3.8-flash",
+    # openai/gpt-4o on OR is a SLIDING tag — it points to OpenAI's current gpt-4o default,
+    # which drifts as OpenAI promotes new snapshots. Pinning to the 2024-11-20 snapshot so
+    # our number is reproducible against the ParlaSpeech 3.0 audit cited in the lit review.
+    "gpt4o": "openai/gpt-4o-2024-11-20",
+    # Sliding current-frontier OpenAI slug. Expect the resolved snapshot to change over time;
+    # record whatever OR reports in the response headers for provenance.
+    "gpt5":  "openai/gpt-5",
 }
 
 TASKS = [
@@ -60,6 +74,14 @@ TASKS = [
     ("flash", "0shot", "3cls"),
     ("flash", "fshot", "6cls"),
     ("flash", "fshot", "3cls"),
+    ("gpt4o", "0shot", "6cls"),
+    ("gpt4o", "0shot", "3cls"),
+    ("gpt4o", "fshot", "6cls"),
+    ("gpt4o", "fshot", "3cls"),
+    ("gpt5",  "0shot", "6cls"),
+    ("gpt5",  "0shot", "3cls"),
+    ("gpt5",  "fshot", "6cls"),
+    ("gpt5",  "fshot", "3cls"),
 ]
 
 LABELS_6 = [

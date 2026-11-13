@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent
+ROOT = HERE.parent.parent
 # Defaults are v2 now. Pass --src data/rog_dialog_instance.jsonl --suffix "" to rebuild v1.
 SRC = ROOT / "data" / "rog_dialog_v2_instance.jsonl"
 OUT_SUBSET = ROOT / "data" / "subset_174_seed42_v2.jsonl"

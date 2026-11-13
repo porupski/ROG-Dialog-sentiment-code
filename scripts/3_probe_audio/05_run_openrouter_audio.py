@@ -2,10 +2,12 @@
 """Run audio-sentiment configs via OpenRouter on the fixed 170-instance subset.
 
 Mirrors 02's logging schema and parse strategy; swaps the text input for a base64-encoded WAV
-audio part alongside the same label-only instruction. Haiku is excluded: Anthropic models on
-OR don't accept audio input today — Gemini-family only.
+audio part alongside the same label-only instruction. Anthropic Haiku is excluded: Anthropic
+models on OR don't accept audio input today.
 
-Default configs: {flash, carbon} × 0shot × {6cls, 3cls} = 4 runs × 170 calls.
+Models: Gemini-family + OpenAI audio-preview snapshots. OpenAI audio input requires the
+dedicated gpt-4o-audio-preview / gpt-5-audio-preview slugs; the plain openai/gpt-4o endpoint
+on OR rejects audio input parts.
 
 Few-shot audio (uploading 18 reference WAVs per call) is gated by INCLUDE_FEWSHOT below; OFF
 by default because each fshot call ships ~18× the audio bytes versus 0shot and audio tokens
@@ -29,7 +31,7 @@ from pathlib import Path
 import requests
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent
+ROOT = HERE.parent.parent
 
 SUBSET = ROOT / "data" / "subset_174_seed42_v2.jsonl"
 FEWSHOT = ROOT / "data" / "fewshot_pool_18_seed42_v2.jsonl"
@@ -45,6 +47,11 @@ OR_URL = "https://openrouter.ai/api/v1/chat/completions"
 MODELS = {
     "flash":  "google/gemini-3.8-flash",
     "carbon": "google/gemini-4-carbon",
+    # OpenAI audio-input slugs. These accept base64 WAV parts; the plain openai/gpt-4o
+    # does not. Pin gpt4o-audio so lit-side numbers are reproducible; gpt5-audio slides
+    # like its text sibling.
+    "gpt4o":  "openai/gpt-4o-audio-preview-2024-12-17",
+    "gpt5":   "openai/gpt-5-audio-preview",
 }
 
 # Toggle few-shot audio runs on/off. OFF by default: fshot multiplies request bytes ~19x
@@ -67,6 +74,10 @@ FSHOT_TASKS = [
     ("flash",  "fshot", "3cls"),
     ("carbon", "fshot", "6cls"),
     ("carbon", "fshot", "3cls"),
+    ("gpt4o",  "fshot", "6cls"),
+    ("gpt4o",  "fshot", "3cls"),
+    ("gpt5",   "fshot", "6cls"),
+    ("gpt5",   "fshot", "3cls"),
 ]
 
 LABELS_6 = [
