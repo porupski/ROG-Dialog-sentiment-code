@@ -1,0 +1,76 @@
+{
+  "_readme": [
+    "Knobs for Phase A (eval-side duration binning on a 4_finetune_text matrix run).",
+    "",
+    "Bin modes:",
+    "  - fixed    : use bins_audio_sec / bins_text_words as literal boundaries.",
+    "  - quantile : derive 5 equal-count bins from the test source's own distribution.",
+    "               Sanity cross-check: real structure survives the switch; artefacts don't.",
+    "",
+    "test_source_axis: which x-axis to use for each test source.",
+    "  - audio_sec   : bin by (end_t - start_t) from the source JSONL.",
+    "  - text_words  : bin by len(text.split()).",
+    "Phase A: ROG uses audio_sec (metadata available) and text_words side-by-side;",
+    "ParlaSent-SL uses text_words only (text source); ParlaSpeech-SI uses text_words",
+    "as a fallback until data/parlaspeech_v4_si_utterance_instance.jsonl is re-exposed.",
+    "",
+    "min_bin_n: bins with fewer items are kept in the long CSV but omitted from the",
+    "primary envelope plot (too noisy to draw a line through).",
+    "",
+    "self_labeled_backbone: cells where this backbone trained on any mixture with 'P' are",
+    "flagged. They reproduce the ParlaSent-model's own labels on ParlaSpeech and measure",
+    "self-consistency, not transfer; excluded from the primary envelope curve."
+  ],
+
+  "bins_audio_sec":  [[0, 2], [2, 4], [4, 6], [6, 10], [10, 20]],
+  "bins_text_words": [[0, 10], [10, 20], [20, 30], [30, 40], [40, 999]],
+
+  "test_source_axis": {
+    "parlasent_sl":   ["text_words"],
+    "parlaspeech_si": ["text_words"],
+    "rog_dia":        ["audio_sec", "text_words"]
+  },
+
+  "source_metadata": {
+    "rog_dia": {
+      "path": "data/rog_dialog_v2_instance.jsonl",
+      "audio_field_pair": ["start_t", "end_t"]
+    },
+    "parlasent_sl": {
+      "path": "data/parlasent_sl_instance.jsonl"
+    },
+    "parlaspeech_si": {
+      "path": "data/parlaspeech_v4_si_utterance_instance.jsonl",
+      "audio_field_pair": ["audio_start", "audio_end"],
+      "audio_length_field": "audio_length",
+      "fallback_to_text_words_if_missing": true
+    }
+  },
+
+  "metrics_per_bin": ["F1_3", "F1_6", "R2", "spearman", "MAE", "n"],
+  "primary_metric":  "F1_3",
+  "min_bin_n": 25,
+
+  "backbones_order": [
+    "xlm-roberta-large",
+    "xlm-r-parla",
+    "xlm-r-parlasent"
+  ],
+  "mixtures_order": ["S", "P", "R", "SP", "SR", "PR", "SPR"],
+
+  "self_labeled_backbone": "xlm-r-parlasent",
+
+  "plot_layout": {
+    "primary": "one-line-per-backbone-best-mixture-avg",
+    "facet":   "per-backbone-per-mixture-panels"
+  },
+
+  "languages_registry": {
+    "_note": "For Phase B — not consumed by Phase A scripts. Each entry names the parlasent_<lang> and parlaspeech_<lang> JSONLs we expect under data/.",
+    "sl":  {"parlasent": "data/parlasent_sl_instance.jsonl",  "parlaspeech": "data/parlaspeech_v4_si_utterance_instance.jsonl"},
+    "bcs": {"parlasent": "data/parlasent_bcs_instance.jsonl", "parlaspeech": "data/parlaspeech_v3_bcs_utterance_instance.jsonl"},
+    "cz":  {"parlasent": "data/parlasent_cz_instance.jsonl",  "parlaspeech": "data/parlaspeech_v3_cz_utterance_instance.jsonl"},
+    "sk":  {"parlasent": "data/parlasent_sk_instance.jsonl",  "parlaspeech": null},
+    "en":  {"parlasent": "data/parlasent_en_instance.jsonl",  "parlaspeech": null}
+  }
+}
