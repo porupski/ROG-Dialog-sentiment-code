@@ -18,7 +18,8 @@ data/                   source JSONLs + derived subsets  (gitignored)
 misc/                   keys, cached raw downloads, notes (gitignored)
 runs/                   all script outputs                (gitignored)
 scripts/
-  analyze_results.py           shared probe analyzer (reads text + audio runs)
+  analyze_probe.py             analyzer for probe batches (02/04/05 predictions.jsonl)
+  analyze_finetune.py          analyzer for finetune matrices (4_finetune_text summary.json)
   0_env_setup/                 conda env recipes (cloned from SSP)
   1_data_prep/
     01_build_subset.py         ROG eval subset + few-shot pool
@@ -90,10 +91,10 @@ python3 scripts/1_data_prep/01_build_subset.py       # ROG 170-instance eval + 1
 python3 scripts/2_probe_text/02_run_openrouter_text.py
 python3 scripts/2_probe_text/04_run_parlasent.py
 python3 scripts/3_probe_audio/05_run_openrouter_audio.py
-python3 scripts/analyze_results.py runs/<batch_dir>
+python3 scripts/analyze_probe.py runs/<batch_dir>
 ```
 
-Each run writes `predictions.jsonl` in the same schema so `analyze_results.py` works on any batch.
+Each run writes `predictions.jsonl` in the same schema so `analyze_probe.py` works on any batch.
 
 **Fine-tune phase** — build the deliverable:
 
@@ -105,6 +106,14 @@ python3 scripts/4_finetune_text/run_matrix.py --mode test
 tmux new -s six
 python3 scripts/4_finetune_text/run_matrix.py --mode full --use_gpu 2>&1 \
     | tee -a runs/finetune_$(date +%F_%H%M).log
+
+# Summarize the matrix (CSV + markdown report + heatmaps):
+python3 scripts/analyze_finetune.py runs/finetune_<stamp>
 ```
+
+The two analyzers are deliberately separate — `analyze_probe.py` reads predictions.jsonl
+batches (Krippendorff across runs, confusion matrices); `analyze_finetune.py` reads the
+per-cell `summary.json` the matrix engine emits (backbone × mixture × test matrices,
+best-cell ranking, transfer-gap table, self-labeled cell flagging).
 
 See [`scripts/4_finetune_text/README.md`](scripts/4_finetune_text/README.md) for subset flags, output schema, and GPU-guard details.

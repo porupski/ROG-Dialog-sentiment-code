@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Compute metrics and plots for a batch of OpenRouter/local sentiment runs.
+"""Compute metrics and plots for a BATCH of OpenRouter / local-model PROBE runs.
+
+Consumes the per-run predictions.jsonl emitted by scripts/2_probe_text/*,
+scripts/3_probe_audio/*, and scripts/2_probe_text/04_run_parlasent.py. For the
+4_finetune_text matrix runner use `scripts/analyze_finetune.py` instead — that
+format is per-cell summary.json, not predictions.jsonl.
 
 Per-run metrics: accuracy_all, accuracy_parsed, parse_rate, macro_f1, spearman_rho, ordinal_mae.
 Per-run artefacts: predictions.jsonl (input), confusion_matrix.png.
