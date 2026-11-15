@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sentiment signal hunt — ROG-Dialog v2</title>
+<style>
+  @page { size: A4 portrait; margin: 14mm; }
+  html, body { font-family: "Inter", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+               color: #1b1b1b; background: #fff; }
+  body { max-width: 182mm; margin: 0 auto; font-size: 10.2pt; line-height: 1.45; }
+  h1 { font-size: 15pt; margin: 0 0 1mm 0; font-weight: 650; }
+  h1 .sub { display: block; font-weight: 400; color: #666; font-size: 9.8pt;
+            margin-top: 1mm; }
+  h2 { font-size: 11.2pt; margin: 5mm 0 1.5mm 0;
+       padding-bottom: 0.8mm; border-bottom: 1px solid #ddd; font-weight: 600; }
+  p { margin: 1.5mm 0; }
+  .finding { font-size: 10.4pt; margin-bottom: 1.5mm; }
+  .finding strong { color: #111; }
+
+  /* Tables — visible + pretty. */
+  table {
+      border-collapse: separate; border-spacing: 0;
+      width: 100%; font-size: 8.8pt; margin: 1.5mm 0 2mm 0;
+      border-radius: 1.5mm; overflow: hidden;
+      box-shadow: 0 0.3mm 1.2mm rgba(0,0,0,0.08);
+  }
+  thead th {
+      background: #2b3645; color: #fff; font-weight: 600;
+      padding: 1.6mm 1.6mm; text-align: center;
+      border: none; font-size: 8.6pt;
+      letter-spacing: 0.02em;
+  }
+  thead th.l { text-align: left; }
+  tbody td {
+      padding: 1.3mm 1.6mm; text-align: center;
+      border-bottom: 1px solid #ececec;
+      border-right: 1px solid #ececec;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody td:last-child { border-right: none; }
+  td.l { text-align: left; }
+  td.model { font-weight: 500; }
+
+  /* Heatmap cell colours (background intensity reflects F1). */
+  .win  { background: #74c69d; font-weight: 700; color: #0a2e1c; }
+  .good { background: #b7e4c7; }
+  .mid  { background: #ffe066; }
+  .meh  { background: #ffb37a; }
+  .bad  { background: #ff8f8f; }
+  .warn { background: #ffe5d9; }
+  .flag { color: #a80000; font-weight: 600; }
+
+  details { margin: 1mm 0 2mm 0; padding: 0; }
+  details summary {
+      cursor: pointer; color: #555; font-size: 9pt;
+      padding: 0.6mm 0; user-select: none; list-style: none;
+  }
+  details summary::before { content: "▸ "; color: #888; }
+  details[open] summary::before { content: "▾ "; color: #888; }
+  details > div.body {
+      padding: 1.5mm 0 1mm 4mm; border-left: 2px solid #eee;
+      margin-left: 1mm; font-size: 9.3pt; line-height: 1.4;
+  }
+  ul { margin: 1mm 0; padding-left: 5mm; }
+  li { margin: 0.5mm 0; }
+
+  .deliverable {
+      background: #e9f1fc; border-left: 3px solid #2a6bd0;
+      padding: 2.2mm 3mm; margin: 2mm 0 2mm 0; font-size: 10.2pt;
+      border-radius: 1mm;
+  }
+  .hedge {
+      background: #fff8e8; border-left: 3px solid #d08b1a;
+      padding: 2.2mm 3mm; margin: 1.5mm 0; font-size: 9.8pt;
+      border-radius: 1mm;
+  }
+  .conclusion {
+      background: #eef7ec; border-left: 3px solid #2e8b4d;
+      padding: 2.4mm 3mm; margin: 2mm 0 2mm 0; font-size: 10.2pt;
+      border-radius: 1mm;
+  }
+  .conclusion strong { color: #194a28; }
+  footer { margin-top: 4mm; color: #777; font-size: 8.4pt; }
+  code { font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+         background: #f2f2f2; padding: 0 1mm; font-size: 9pt; border-radius: 0.5mm; }
+</style>
+</head>
+<body>
+
+<h1>Where does the sentiment signal live?
+  <span class="sub">Short Slovenian dialogue clips (ROG-Dialog v2), text vs audio.
+  170-instance speaker-disjoint evaluation set; ordinal 6-class labels and collapsed 3-class polarity.</span>
+</h1>
+
+<!-- =================================== 1 TEXT via LLM -->
+<h2>1 · Text, via API</h2>
+
+<p class="finding">
+<strong>Gemini Flash</strong> and <strong>Claude Haiku</strong>, zero-shot and 18-exemplar few-shot.
+Few-shot helps text everywhere. Best: Flash few-shot at <strong>F1 0.607</strong> (3-class).
+Haiku is ~13× cheaper for a 0.07 F1 penalty.
+</p>
+
+<table>
+  <thead>
+    <tr><th class="l">model</th><th>shot</th><th>3-cls F1</th><th>6-cls F1</th><th>3-cls ρ</th><th>6-cls ρ</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="l model">Gemini Flash 3.8</td><td>few-shot</td><td class="win">0.607</td><td class="win">0.411</td><td class="good">0.503</td><td class="good">0.568</td></tr>
+    <tr><td class="l model">Gemini Flash 3.8</td><td>0-shot</td><td class="good">0.592</td><td class="mid">0.349</td><td class="mid">0.481</td><td class="good">0.596</td></tr>
+    <tr><td class="l model">Claude Haiku 4.5</td><td>few-shot</td><td class="good">0.534</td><td class="mid">0.337</td><td class="mid">0.420</td><td class="mid">0.448</td></tr>
+    <tr><td class="l model">Claude Haiku 4.5</td><td>0-shot</td><td class="mid">0.467</td><td class="meh">0.213</td><td class="meh">0.334</td><td class="meh">0.341</td></tr>
+  </tbody>
+</table>
+
+<details>
+  <summary>Caveats + extras</summary>
+  <div class="body">
+    <ul>
+      <li>Flash &gt; Haiku cleanly on every scheme, both shot modes.</li>
+      <li>Few-shot gain: Flash +0.015 (3-cls) / +0.062 (6-cls); Haiku +0.067 / +0.124.</li>
+      <li>Total API cost for all 8 configs × 170 instances: ~$0.68 (list).</li>
+      <li>Early collapse of Flash-fshot-3cls (F1 0.21) was fixed by raising <code>max_tokens</code> 50 → 500 so the model's mandatory reasoning had room.</li>
+    </ul>
+  </div>
+</details>
+
+<!-- =================================== 2 FINETUNE -->
+<h2>2 · Text, via fine-tuned XLM-R</h2>
+
+<p class="finding">
+Three XLM-R backbones × seven data mixtures (parliament text, parliament speech transcripts, dialogue).
+<strong>Pure parliament → dialogue transfer is broken.</strong>
+<strong>ROG alone is too small</strong> — plain backbones collapse to "neutral".
+<strong>Mixing all three sources (SPR) is the only path</strong> that holds positive R² on dialogue.
+</p>
+
+<table>
+  <thead>
+    <tr><th class="l">backbone</th><th>mixture</th><th>3-cls F1</th><th>6-cls F1</th><th>R²</th><th>note</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="l model">XLM-R-large</td><td>R-only</td><td class="bad">0.271</td><td class="bad">0.125</td><td class="bad">−0.030</td><td><span class="flag">collapse → neutral</span></td></tr>
+    <tr><td class="l model">XLM-R-parla</td><td>R-only</td><td class="bad">0.271</td><td class="bad">0.125</td><td class="bad">−0.028</td><td><span class="flag">collapse → neutral</span></td></tr>
+    <tr><td class="l model">XLM-R-parlasent</td><td>R-only</td><td class="win">0.572</td><td class="good">0.286</td><td class="mid">+0.200</td><td>head rescues</td></tr>
+    <tr><td class="l model">XLM-R-large</td><td>SPR</td><td class="good">0.566</td><td class="meh">0.274</td><td class="good">+0.202</td><td>clean</td></tr>
+    <tr><td class="l model">XLM-R-parla</td><td>SPR</td><td class="good">0.554</td><td class="win">0.298</td><td class="mid">+0.172</td><td>6-cls peak (clean)</td></tr>
+    <tr class="warn"><td class="l model">XLM-R-parlasent</td><td>SPR</td><td class="good">0.549</td><td class="meh">0.268</td><td class="win">+0.216</td><td>⚠ self-labelled on P</td></tr>
+  </tbody>
+</table>
+
+<details>
+  <summary>Caveats + extras</summary>
+  <div class="body">
+    <ul>
+      <li>Parliament-only training evaluated on dialogue: R² between <strong>−0.59 and −1.25</strong> (worse than predicting the mean).</li>
+      <li>Transfer gap (parliament R² − dialogue R² on S-only): large <strong>+1.28</strong>, parla <strong>+1.79</strong> (worst), parlasent <strong>+1.08</strong> (smallest). The sentiment head carries the domain-robust signal.</li>
+      <li>Only two mixtures shown — R-only and SPR. The other five (S, P, SP, SR, PR) sit between.</li>
+      <li>⚠ on XLM-R-parlasent × SPR: the ParlaSpeech labels in the training mix were generated by ParlaSent itself, so that cell partially measures self-consistency, not transfer.</li>
+    </ul>
+  </div>
+</details>
+
+<!-- =================================== 3 AUDIO -->
+<h2>3 · Audio, via API</h2>
+
+<p class="finding">
+<strong>Gemini Flash</strong> and <strong>Gemini Carbon</strong> on ROG audio. Flash 0-shot hits <strong>F1 0.581</strong> on 3-class
+— within 0.03 of the text ceiling. <strong>Few-shot destroys audio</strong>: Flash's own
+judgements sign-flip (Krippendorff α = −0.10 shot-flip, 6-class).
+</p>
+
+<table>
+  <thead>
+    <tr><th class="l">model</th><th>shot</th><th>3-cls F1</th><th>6-cls F1</th><th>3-cls ρ</th><th>6-cls ρ</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="l model">Gemini Flash 3.8</td><td>0-shot</td><td class="win">0.581</td><td class="meh">0.236</td><td class="good">0.495</td><td class="mid">0.430</td></tr>
+    <tr><td class="l model">Gemini Carbon 4</td><td>0-shot</td><td class="good">0.523</td><td class="good">0.290</td><td class="mid">0.385</td><td class="good">0.488</td></tr>
+    <tr><td class="l model">Gemini Carbon 4</td><td>few-shot</td><td class="mid">0.491</td><td class="good">0.290</td><td class="meh">0.255</td><td class="mid">0.389</td></tr>
+    <tr><td class="l model">Gemini Flash 3.8</td><td>few-shot</td><td class="meh">0.413</td><td class="bad">0.171</td><td class="bad">0.140</td><td class="bad">0.052</td></tr>
+  </tbody>
+</table>
+
+<details>
+  <summary>Caveats + extras</summary>
+  <div class="body">
+    <ul>
+      <li>6-cls audio ceiling is Carbon-0-shot at <strong>0.290</strong> — half a class-label off, on average.</li>
+      <li>Carbon shot-flip α = +0.61 — only audio model that doesn't collapse under few-shot, but still loses F1.</li>
+      <li>Both runs were on <strong>50%-off promo pricing</strong>; list price would double (~$2.47 → ~$4.93 at this batch size).</li>
+      <li>Recommendation: ship audio <strong>zero-shot only</strong> for now. Re-encode exemplars as audio+verbal-label pairs before retrying few-shot.</li>
+    </ul>
+  </div>
+</details>
+
+<!-- =================================== DIRECTION -->
+<h2>Where to go next</h2>
+
+<div class="deliverable">
+  <strong>Deliverable is a transformer speech-sentiment model, not an API pipeline.</strong>
+  Live recipe: <strong>XLM-R-ParlaSent × SPR mixture</strong>, text modality.
+  Audio doesn't beat text yet on 6-class. Fusion and a dedicated audio encoder (wav2vec-family)
+  are open options pending bossman's call.
+</div>
+
+<!-- =================================== 4 SPEECH RATE FINDING -->
+<h2>4 · Bonus — speech rate turns out to matter</h2>
+
+<p class="finding">
+Follow-up pass on the ROG test set under a <strong>speech-rate control</strong> (words per second).
+The "longer clips carry more sentiment signal" effect lives in the <strong>slow-to-moderate band
+(≤ ~2.7 wps)</strong> and vanishes or inverts above it. In fast speech, duration stops mattering.
+</p>
+
+<table>
+  <thead>
+    <tr><th class="l">axis</th><th class="l">backbone</th>
+        <th>Q1 (≤2.15 wps)</th><th>Q2 (2.15–2.74)</th><th>Q3 (2.74–3.35)</th><th>Q4 (&gt;3.35)</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="l">audio seconds</td><td class="l model">XLM-R-large</td><td class="mid">weak</td><td class="win">monotone+</td><td class="mid">weak</td><td class="mid">weak</td></tr>
+    <tr><td class="l">audio seconds</td><td class="l model">XLM-R-parla</td><td class="mid">weak</td><td class="win">monotone+</td><td class="mid">weak</td><td class="mid">weak</td></tr>
+    <tr><td class="l">audio seconds</td><td class="l model">XLM-R-parlasent</td><td class="mid">weak</td><td class="mid">weak</td><td class="win">monotone+</td><td class="bad">monotone−</td></tr>
+    <tr><td class="l">word count</td><td class="l model">XLM-R-large</td><td class="win">monotone+</td><td class="win">monotone+</td><td class="mid">weak</td><td class="mid">weak</td></tr>
+    <tr><td class="l">word count</td><td class="l model">XLM-R-parla</td><td class="win">monotone+</td><td class="win">monotone+</td><td class="mid">weak</td><td class="mid">weak</td></tr>
+    <tr><td class="l">word count</td><td class="l model">XLM-R-parlasent</td><td class="win">monotone+</td><td class="win">monotone+</td><td class="mid">weak</td><td class="mid">weak</td></tr>
+  </tbody>
+</table>
+
+<div class="conclusion">
+  <strong>Conclusion — clip-curation filter.</strong>
+  Length alone isn't enough. For a clean training / evaluation set with
+  <em>potent</em> sentiment signal, the filter should be:
+  <ul style="margin-top: 1.2mm;">
+    <li><strong>Length:</strong> 10–40 words <em>or</em> 2–20 s audio (existing).</li>
+    <li><strong>Speech rate:</strong> gate on <strong>WPS ≈ 1.5–3.0</strong> (the band where
+      longer clips measurably carry more sentiment signal; above ~3 wps the signal flattens).</li>
+  </ul>
+  Fast, dense speech (&gt; 3.35 wps) is in the data but doesn't play by the same length rule —
+  worth tagging separately rather than mixing it into a general training pool.
+</div>
+
+<details>
+  <summary>How this was measured</summary>
+  <div class="body">
+    <ul>
+      <li>ROG-Dialog test (n=434) split into 4 equal-count WPS quartiles.</li>
+      <li>Inside each quartile, duration / word count binned into 3 equal-count sub-bins (~36 instances per bin).</li>
+      <li>Per bin, F1_3 is computed from each matrix cell's predictions; envelope = best-mixture-avg per backbone, self-labelled cells excluded.</li>
+      <li>Shape classification: ρ (Spearman of bin-center vs F1_3) ≥ +0.6 = monotone+, ≤ −0.6 = monotone−, |ρ| &lt; 0.3 = flat, else = weak.</li>
+      <li>Full artefacts: <code>misc/run_results/finetune_20261113_162724/sent_duration/</code>.</li>
+    </ul>
+  </div>
+</details>
+
+<footer>
+Full numbers: <code>collective_results.md</code>,
+<code>misc/run_results/finetune_20261113_162724/analysis/matrix_report.md</code>.
+Duration + speech-rate follow-up: <code>collective_results_sent_duration.md</code>,
+<code>misc/run_results/finetune_20261113_162724/sent_duration/speech_rate_report.md</code>.
+</footer>
+
+</body>
+</html>

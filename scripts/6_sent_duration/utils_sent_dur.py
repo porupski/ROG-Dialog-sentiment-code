@@ -193,6 +193,13 @@ class PredRow:
     text_words: int
     audio_sec: float | None
 
+    @property
+    def speech_rate(self) -> float | None:
+        """Words per second. None when audio duration is missing or 0."""
+        if self.audio_sec is None or self.audio_sec <= 0:
+            return None
+        return self.text_words / self.audio_sec
+
 
 def load_predictions_for_cell(
     cell: Cell, test_source: str, index: dict[str, dict]
