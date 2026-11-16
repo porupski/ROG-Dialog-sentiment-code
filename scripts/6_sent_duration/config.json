@@ -27,7 +27,7 @@
 
   "test_source_axis": {
     "parlasent_sl":   ["text_words"],
-    "parlaspeech_si": ["text_words"],
+    "parlaspeech_si": ["audio_sec", "text_words"],
     "rog_dia":        ["audio_sec", "text_words"]
   },
 
@@ -40,7 +40,7 @@
       "path": "data/parlasent_sl_instance.jsonl"
     },
     "parlaspeech_si": {
-      "path": "data/parlaspeech_v4_si_utterance_instance.jsonl",
+      "path": "data/parlaspeech_v4_si_utterance_instance_full.jsonl",
       "audio_field_pair": ["audio_start", "audio_end"],
       "audio_length_field": "audio_length",
       "fallback_to_text_words_if_missing": true

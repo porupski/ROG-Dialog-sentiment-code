@@ -49,6 +49,8 @@
   .bad  { background: #ff8f8f; }
   .warn { background: #ffe5d9; }
   .flag { color: #a80000; font-weight: 600; }
+  tr.baseline td { background: #f4f4f4; color: #555; font-style: italic; }
+  tr.baseline td.l { color: #333; }
 
   details { margin: 1mm 0 2mm 0; padding: 0; }
   details summary {
@@ -61,8 +63,34 @@
       padding: 1.5mm 0 1mm 4mm; border-left: 2px solid #eee;
       margin-left: 1mm; font-size: 9.3pt; line-height: 1.4;
   }
-  ul { margin: 1mm 0; padding-left: 5mm; }
-  li { margin: 0.5mm 0; }
+  ul { margin: 1.5mm 0; padding-left: 5.5mm; }
+  li { margin: 1.2mm 0; }
+  li strong { color: #111; }
+
+  /* Dataset cards — three side by side. */
+  .dataset-grid {
+      display: grid; grid-template-columns: 1fr 1fr 1fr;
+      gap: 3mm; margin: 2mm 0 3mm 0;
+  }
+  .dcard {
+      border: 1px solid #d5d5d5; border-radius: 1.5mm;
+      padding: 2.5mm 3mm; font-size: 8.8pt; line-height: 1.4;
+      background: #fafafa;
+  }
+  .dcard h3 {
+      font-size: 9.6pt; margin: 0 0 1.5mm 0; font-weight: 600;
+      color: #1b1b1b; padding-bottom: 1mm;
+      border-bottom: 1px solid #ddd;
+  }
+  .dcard h3 .dtag {
+      display: inline-block; font-size: 7.6pt; font-weight: 500;
+      color: #555; background: #e5e5e5; padding: 0.2mm 1.4mm;
+      border-radius: 1mm; margin-left: 1.2mm; vertical-align: middle;
+  }
+  .dcard ul { margin: 0; padding-left: 4mm; }
+  .dcard li { margin: 0.9mm 0; }
+  .dcard .kv { color: #555; font-size: 8.4pt; }
+  .dcard .kv b { color: #1b1b1b; font-weight: 600; }
 
   .deliverable {
       background: #e9f1fc; border-left: 3px solid #2a6bd0;
@@ -92,6 +120,105 @@
   170-instance speaker-disjoint evaluation set; ordinal 6-class labels and collapsed 3-class polarity.</span>
 </h1>
 
+<!-- =================================== 0 DATA + ENGINE -->
+<h2>0 · What we're working with</h2>
+
+<div class="dataset-grid">
+
+  <div class="dcard">
+    <h3>ROG-Dialog v2 <span class="dtag">dialogue</span></h3>
+    <ul>
+      <li class="kv"><b>Total:</b> 13,658 usable instances</li>
+      <li class="kv"><b>Splits:</b> train 10,544 · dev 881 · test 2,233</li>
+      <li class="kv"><b>Audio:</b> manual, 1-ch WAV</li>
+      <li class="kv"><b>Labels (3-cls):</b><br>
+          negative 15.6% · neutral 71.8% · positive 12.6%</li>
+      <li class="kv"><b>Labels (6-cls):</b><br>
+          <span style="font-size:8.3pt">
+          predNeg 5.6 · mixNeg 10.0 · neuNeg 15.6<br>
+          neuPos 56.2 · mixPos 6.0 · predPos 6.6
+          </span></li>
+      <li class="kv"><b>Duration:</b> 0.02 – 12.3 s<br>
+          mean 1.46 · median 1.19</li>
+      <li class="kv"><b>Words:</b> 1 – 30<br>mean 3.8 · median 3</li>
+      <li class="kv"><b>WPS:</b> mean 2.93 · median 2.70<br>(fast conversation)</li>
+    </ul>
+  </div>
+
+  <div class="dcard">
+    <h3>ParlaSpeech-SI <span class="dtag">parliament speech</span></h3>
+    <ul>
+      <li class="kv"><b>Total:</b> 918,034 usable instances<br>
+          <em>(filter: 10 – 40 words)</em></li>
+      <li class="kv"><b>Splits:</b> train 734K · dev 92K · test 92K</li>
+      <li class="kv"><b>Audio:</b> auto-aligned from parliament video</li>
+      <li class="kv"><b>Labels (3-cls, auto by ParlaSent):</b><br>
+          negative 35.6% · neutral 52.4% · positive 11.9%</li>
+      <li class="kv"><b>Labels (6-cls, auto):</b><br>
+          <span style="font-size:8.3pt">
+          predNeg 18.7 · mixNeg 16.9 · neuNeg 16.5<br>
+          neuPos 35.9 · mixPos 10.1 · predPos 1.8
+          </span></li>
+      <li class="kv"><b>Duration:</b> 1.15 – 70.6 s<br>mean 10.98 · median 10.23</li>
+      <li class="kv"><b>Words:</b> 10 – 40<br>mean 21.6 · median 20</li>
+      <li class="kv"><b>WPS:</b> mean 2.07 · median 2.01<br>(prepared, slow)</li>
+    </ul>
+  </div>
+
+  <div class="dcard">
+    <h3>ParlaSent-SL <span class="dtag">parliament text</span></h3>
+    <ul>
+      <li class="kv"><b>Total:</b> 2,600 usable instances</li>
+      <li class="kv"><b>Splits:</b> train 2,054 · dev 180 · test 366</li>
+      <li class="kv"><b>Audio:</b> none (text-only corpus)</li>
+      <li class="kv"><b>Labels (3-cls, manual):</b><br>
+          negative 38.8% · neutral 54.2% · positive 7.0%</li>
+      <li class="kv"><b>Labels (6-cls, manual):</b><br>
+          <span style="font-size:8.3pt">
+          predNeg 37.2 · mixNeg 1.7 · neuNeg 25.3<br>
+          neuPos 28.8 · mixPos 1.7 · predPos 5.3
+          </span></li>
+      <li class="kv"><b>Duration:</b> —</li>
+      <li class="kv"><b>Words:</b> 5 – 30<br>mean 18.1 · median 18</li>
+      <li class="kv"><b>WPS:</b> —</li>
+    </ul>
+  </div>
+
+</div>
+
+<details>
+  <summary>Engine — what the matrix is, how the duration study reads it</summary>
+  <div class="body">
+    <ul>
+      <li><strong>The fine-tune matrix.</strong> 3 XLM-R backbones × 7 training-data mixtures = 21
+          regression models, each trained once with the ParlaSent recipe (lr 8e-6, batch 32,
+          4 epochs, MSE on z-scored labels). Mixtures are
+          <code>S</code> (ParlaSent-SL), <code>P</code> (ParlaSpeech-SI transcripts),
+          <code>R</code> (ROG-Dialog v2 transcripts), their pairs and the triple
+          <code>SPR</code>.</li>
+      <li><strong>What each model produces.</strong> Each of the 21 cells is evaluated on all
+          three held-out test sets, writing one row per test instance
+          <code>{instance_id, text, gold_scalar, pred_scalar, gold_6cls, pred_6cls, gold_3cls, pred_3cls}</code>
+          to <code>predictions_&lt;source&gt;.jsonl</code>. 63 prediction files total,
+          one matrix run, no model weights kept.</li>
+      <li><strong>The duration / WPS analysis.</strong> All runs below are pure read-and-aggregate
+          over those 63 files. For each test row the script joins to the source JSONL
+          on <code>instance_id</code> to pull duration (s) and word count, computes
+          speech rate as <code>WPS = words / duration</code>, then bins and scores.
+          No model is retrained; everything runs on CPU.</li>
+      <li><strong>Binning.</strong> Quantile (equal-count) bins over each test source's own
+          distribution. The envelope line per backbone is the <em>best-mixture</em> value
+          at each bin. Self-labelled cells (<code>xlm-r-parlasent × {any mixture containing P}</code>,
+          because ParlaSpeech sentiment was auto-generated by ParlaSent itself) are excluded
+          from the envelope — those measure self-consistency, not transfer.</li>
+      <li><strong>Where to look.</strong> Scripts live at <code>scripts/6_sent_duration/</code>.
+          Artefacts land under <code>misc/run_results/finetune_20261113_162724/sent_duration/</code>.
+          Raw dataset stats at <code>misc/dataset_stats.{md,json}</code> (regen with
+          <code>python3 scripts/6_sent_duration/04_dataset_stats.py</code>).</li>
+    </ul>
+  </div>
+</details>
+
 <!-- =================================== 1 TEXT via LLM -->
 <h2>1 · Text, via API</h2>
 
@@ -110,8 +237,13 @@ Haiku is ~13× cheaper for a 0.07 F1 penalty.
     <tr><td class="l model">Gemini Flash 3.8</td><td>0-shot</td><td class="good">0.592</td><td class="mid">0.349</td><td class="mid">0.481</td><td class="good">0.596</td></tr>
     <tr><td class="l model">Claude Haiku 4.5</td><td>few-shot</td><td class="good">0.534</td><td class="mid">0.337</td><td class="mid">0.420</td><td class="mid">0.448</td></tr>
     <tr><td class="l model">Claude Haiku 4.5</td><td>0-shot</td><td class="mid">0.467</td><td class="meh">0.213</td><td class="meh">0.334</td><td class="meh">0.341</td></tr>
+    <tr class="baseline"><td class="l">random (uniform)</td><td>baseline</td><td>0.350</td><td>0.183</td><td>−0.044</td><td>—</td></tr>
+    <tr class="baseline"><td class="l">majority-class</td><td>baseline</td><td>0.170</td><td>0.049</td><td>0.000</td><td>—</td></tr>
   </tbody>
 </table>
+<p style="font-size:8.4pt; color:#666; margin-top:0;"><em>Baselines on the same 170-instance eval set.
+Subset is class-balanced by construction (29 per 6-class) so majority-class is a weak baseline here —
+random uniform is the honest floor to beat. Full numbers: <code>runs/baselines/baselines_subset170.md</code>.</em></p>
 
 <details>
   <summary>Caveats + extras</summary>
@@ -122,6 +254,44 @@ Haiku is ~13× cheaper for a 0.07 F1 penalty.
       <li>Total API cost for all 8 configs × 170 instances: ~$0.68 (list).</li>
       <li>Early collapse of Flash-fshot-3cls (F1 0.21) was fixed by raising <code>max_tokens</code> 50 → 500 so the model's mandatory reasoning had room.</li>
     </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Prompt (verbatim) — recreate this run</summary>
+  <div class="body">
+<p style="margin:0 0 2mm 0">Same prompt for both models; only the label list changes between <code>6cls</code> and <code>3cls</code>.
+Few-shot prepends <strong>18 fixed exemplars</strong> (3 per 6-class, drawn from train, speaker-disjoint from eval)
+as alternating <code>user</code>/<code>assistant</code> turns; 3-class runs relabel the same exemplars to the collapsed label.
+Request body includes <code>"usage":{"include":true}</code> so OpenRouter returns populated cost.
+Source: <code>scripts/2_probe_text/02_run_openrouter_text.py</code>.</p>
+
+<p style="margin:3mm 0 1mm 0"><strong>System message (6-class)</strong></p>
+<pre style="font-size:8.6pt; background:#f6f6f6; padding:2mm; border:1px solid #ddd; white-space:pre-wrap">You classify Slovenian spoken-dialogue utterances by sentiment.
+Choose exactly one label from this list:
+- predominantlyNegative
+- mixedNegative
+- neutralNegative
+- neutralPositive
+- mixedPositive
+- predominantlyPositive
+
+Reply with only the label. No explanation.</pre>
+
+<p style="margin:3mm 0 1mm 0"><strong>System message (3-class)</strong> — same wording, label list becomes
+<code>- negative / - neutral / - positive</code>.</p>
+
+<p style="margin:3mm 0 1mm 0"><strong>User turn (target and each few-shot exemplar)</strong></p>
+<pre style="font-size:8.6pt; background:#f6f6f6; padding:2mm; border:1px solid #ddd; white-space:pre-wrap">Utterance: {text}</pre>
+
+<p style="margin:3mm 0 1mm 0"><strong>Few-shot layout</strong></p>
+<pre style="font-size:8.6pt; background:#f6f6f6; padding:2mm; border:1px solid #ddd; white-space:pre-wrap">system   : &lt;system prompt&gt;
+user     : Utterance: {exemplar_1_text}
+assistant: {exemplar_1_label}
+user     : Utterance: {exemplar_2_text}
+assistant: {exemplar_2_label}
+...  (18 exemplars total in 6-cls; the same texts, collapsed labels in 3-cls)
+user     : Utterance: {target_text}</pre>
   </div>
 </details>
 
@@ -146,8 +316,14 @@ Three XLM-R backbones × seven data mixtures (parliament text, parliament speech
     <tr><td class="l model">XLM-R-large</td><td>SPR</td><td class="good">0.566</td><td class="meh">0.274</td><td class="good">+0.202</td><td>clean</td></tr>
     <tr><td class="l model">XLM-R-parla</td><td>SPR</td><td class="good">0.554</td><td class="win">0.298</td><td class="mid">+0.172</td><td>6-cls peak (clean)</td></tr>
     <tr class="warn"><td class="l model">XLM-R-parlasent</td><td>SPR</td><td class="good">0.549</td><td class="meh">0.268</td><td class="win">+0.216</td><td>⚠ self-labelled on P</td></tr>
+    <tr class="baseline"><td class="l">random (uniform)</td><td>baseline</td><td>0.260</td><td>0.118</td><td>−2.371</td><td>natural prior</td></tr>
+    <tr class="baseline"><td class="l">majority-class (neutralPositive)</td><td>baseline</td><td>0.271</td><td>0.125</td><td>−0.024</td><td>72% neutral on ROG</td></tr>
   </tbody>
 </table>
+<p style="font-size:8.4pt; color:#666; margin-top:0;"><em>Baselines on the matrix's ROG test split (n=434, 2 s filter).
+Majority-class matches R-only cells on F1 — the plain-backbone collapse to "neutral" is literally what
+the majority baseline predicts. SPR beats majority by +0.28 F1_3; that's the real training gain.
+Full numbers: <code>runs/baselines/baselines_rog_test_2s.md</code>.</em></p>
 
 <details>
   <summary>Caveats + extras</summary>
@@ -179,8 +355,12 @@ judgements sign-flip (Krippendorff α = −0.10 shot-flip, 6-class).
     <tr><td class="l model">Gemini Carbon 4</td><td>0-shot</td><td class="good">0.523</td><td class="good">0.290</td><td class="mid">0.385</td><td class="good">0.488</td></tr>
     <tr><td class="l model">Gemini Carbon 4</td><td>few-shot</td><td class="mid">0.491</td><td class="good">0.290</td><td class="meh">0.255</td><td class="mid">0.389</td></tr>
     <tr><td class="l model">Gemini Flash 3.8</td><td>few-shot</td><td class="meh">0.413</td><td class="bad">0.171</td><td class="bad">0.140</td><td class="bad">0.052</td></tr>
+    <tr class="baseline"><td class="l">random (uniform)</td><td>baseline</td><td>0.350</td><td>0.183</td><td>−0.044</td><td>—</td></tr>
+    <tr class="baseline"><td class="l">majority-class</td><td>baseline</td><td>0.170</td><td>0.049</td><td>0.000</td><td>—</td></tr>
   </tbody>
 </table>
+<p style="font-size:8.4pt; color:#666; margin-top:0;"><em>Same 170-instance eval set as Section 1; baselines identical.
+Audio Flash 0-shot beats random by +0.23 F1_3. Full numbers: <code>runs/baselines/baselines_subset170.md</code>.</em></p>
 
 <details>
   <summary>Caveats + extras</summary>
@@ -194,6 +374,46 @@ judgements sign-flip (Krippendorff α = −0.10 shot-flip, 6-class).
   </div>
 </details>
 
+<details>
+  <summary>Prompt (verbatim) — recreate this run</summary>
+  <div class="body">
+<p style="margin:0 0 2mm 0">Audio is sent inline as base-64 WAV via OpenRouter's multimodal <code>input_audio</code> content-part;
+OR routes this to the provider-native audio part (Gemini accepts it directly). Few-shot prepends
+exemplars as <code>(audio, label)</code> pairs — the exemplar text is NOT shown, only the audio and the
+gold label. Source: <code>scripts/3_probe_audio/05_run_openrouter_audio.py</code>.</p>
+
+<p style="margin:3mm 0 1mm 0"><strong>System message (6-class)</strong></p>
+<pre style="font-size:8.6pt; background:#f6f6f6; padding:2mm; border:1px solid #ddd; white-space:pre-wrap">You classify Slovenian spoken-dialogue utterances by sentiment. You will receive an audio clip of a short utterance. Listen to the audio (tone, prosody, emphasis, and the words themselves) and choose exactly one label from this list:
+- predominantlyNegative
+- mixedNegative
+- neutralNegative
+- neutralPositive
+- mixedPositive
+- predominantlyPositive
+
+Reply with only the label. No explanation.</pre>
+
+<p style="margin:3mm 0 1mm 0"><strong>System message (3-class)</strong> — same wording, label list becomes
+<code>- negative / - neutral / - positive</code>.</p>
+
+<p style="margin:3mm 0 1mm 0"><strong>User turn (multimodal content array, per target and each few-shot exemplar)</strong></p>
+<pre style="font-size:8.6pt; background:#f6f6f6; padding:2mm; border:1px solid #ddd; white-space:pre-wrap">[
+  {"type": "text", "text": "Utterance:"},
+  {"type": "input_audio",
+   "input_audio": {"format": "wav", "data": "&lt;base64 WAV bytes&gt;"}}
+]</pre>
+
+<p style="margin:3mm 0 1mm 0"><strong>Few-shot layout</strong></p>
+<pre style="font-size:8.6pt; background:#f6f6f6; padding:2mm; border:1px solid #ddd; white-space:pre-wrap">system   : &lt;system prompt&gt;
+user     : [Utterance: + audio of exemplar 1]
+assistant: {exemplar_1_label}
+user     : [Utterance: + audio of exemplar 2]
+assistant: {exemplar_2_label}
+...  (same 18 exemplars as the text prompt, but audio-only)
+user     : [Utterance: + audio of target]</pre>
+  </div>
+</details>
+
 <!-- =================================== DIRECTION -->
 <h2>Where to go next</h2>
 
@@ -204,52 +424,110 @@ judgements sign-flip (Krippendorff α = −0.10 shot-flip, 6-class).
   are open options pending bossman's call.
 </div>
 
-<!-- =================================== 4 SPEECH RATE FINDING -->
-<h2>4 · Bonus — speech rate turns out to matter</h2>
+<!-- =================================== 4 DURATION + DOMAIN -->
+<h2>4 · Bonus — duration isn't the driver; domain is</h2>
 
 <p class="finding">
-Follow-up pass on the ROG test set under a <strong>speech-rate control</strong> (words per second).
-The "longer clips carry more sentiment signal" effect lives in the <strong>slow-to-moderate band
-(≤ ~2.7 wps)</strong> and vanishes or inverts above it. In fast speech, duration stops mattering.
+Comparing sentiment signal across clip length on <strong>ROG-Dialog</strong> (short colloquial, 2–8 s)
+and <strong>ParlaSpeech-SI</strong> (parliament speech, 2–30 s). The "signal climbs with duration" story
+on ROG turns out to be a <strong>floor effect</strong>, not a universal law — parliament speech sits at
+F1 ≈ 0.9 across every duration bin, dialogue climbs from 0.5 to 0.65 then stops. The ~0.3 F1 gap
+is <strong>domain</strong>, not length.
 </p>
 
 <table>
   <thead>
-    <tr><th class="l">axis</th><th class="l">backbone</th>
-        <th>Q1 (≤2.15 wps)</th><th>Q2 (2.15–2.74)</th><th>Q3 (2.74–3.35)</th><th>Q4 (&gt;3.35)</th></tr>
+    <tr><th class="l">test source · best cell</th><th>duration range</th>
+        <th>~2 s</th><th>~4 s</th><th>~8 s</th><th>~14 s</th><th>~23 s</th></tr>
   </thead>
   <tbody>
-    <tr><td class="l">audio seconds</td><td class="l model">XLM-R-large</td><td class="mid">weak</td><td class="win">monotone+</td><td class="mid">weak</td><td class="mid">weak</td></tr>
-    <tr><td class="l">audio seconds</td><td class="l model">XLM-R-parla</td><td class="mid">weak</td><td class="win">monotone+</td><td class="mid">weak</td><td class="mid">weak</td></tr>
-    <tr><td class="l">audio seconds</td><td class="l model">XLM-R-parlasent</td><td class="mid">weak</td><td class="mid">weak</td><td class="win">monotone+</td><td class="bad">monotone−</td></tr>
-    <tr><td class="l">word count</td><td class="l model">XLM-R-large</td><td class="win">monotone+</td><td class="win">monotone+</td><td class="mid">weak</td><td class="mid">weak</td></tr>
-    <tr><td class="l">word count</td><td class="l model">XLM-R-parla</td><td class="win">monotone+</td><td class="win">monotone+</td><td class="mid">weak</td><td class="mid">weak</td></tr>
-    <tr><td class="l">word count</td><td class="l model">XLM-R-parlasent</td><td class="win">monotone+</td><td class="win">monotone+</td><td class="mid">weak</td><td class="mid">weak</td></tr>
+    <tr><td class="l">ROG-Dialog · xlm-r-parla × SPR</td><td>2 – 6 s</td>
+        <td class="meh">0.495</td><td class="meh">0.469</td><td class="good">0.616</td>
+        <td style="background:#eee">n/a</td><td style="background:#eee">n/a</td></tr>
+    <tr><td class="l">ROG-Dialog · xlm-r-parlasent × R</td><td>2 – 6 s</td>
+        <td class="good">0.555</td><td class="meh">0.483</td><td class="win">0.657</td>
+        <td style="background:#eee">n/a</td><td style="background:#eee">n/a</td></tr>
+    <tr><td class="l">ParlaSpeech-SI · xlm-r-parla × P</td><td>2 – 30 s</td>
+        <td style="background:#eee">n/a</td>
+        <td class="win">0.937</td><td class="win">0.952</td><td class="win">0.935</td><td class="win">0.916</td></tr>
+    <tr><td class="l">ParlaSpeech-SI · xlm-r-parlasent × S</td><td>2 – 30 s</td>
+        <td style="background:#eee">n/a</td>
+        <td class="win">0.891</td><td class="good">0.837</td><td class="win">0.890</td><td class="win">0.876</td></tr>
   </tbody>
 </table>
 
+<p style="font-size:8.6pt; color:#666; margin-top:0;">
+<em>Values are F1_3 at the quantile-bin centre closest to each named column, best-mixture-avg,
+self-labelled cells excluded. 2 s and 4 s bins don't exist on ParlaSpeech-SI (parliament utterances
+start at ~2.25 s and cluster longer); 8–23 s bins don't exist on ROG (dialogue clips cap at ~12 s,
+most are &lt;6 s).</em>
+</p>
+
+<details>
+  <summary>Speech-rate control — same conclusion from a different angle</summary>
+  <div class="body">
+    <ul>
+      <li>Split each test source into 4 speech-rate quartiles (words / second) and re-bin inside each quartile.</li>
+      <li>On <strong>ParlaSpeech-SI · audio-sec</strong>: 0 / 4 quartiles show a monotone+ shape on xlm-r-parla and xlm-r-parlasent. Duration doesn't matter within-WPS.</li>
+      <li>On <strong>ROG · audio-sec</strong>: 1 / 4 quartiles survive per backbone — partial confound.</li>
+      <li>WPS ranges also split by domain: parliament speakers run 0.9 – 4.4 wps (prepared, slow); ROG speakers 0.25 – 5.4 wps (conversational, wider spread).</li>
+      <li>Full WPS reports: <code>sent_duration/speech_rate_report_rog_dia.md</code>, <code>speech_rate_report_parlaspeech_si.md</code>.</li>
+    </ul>
+  </div>
+</details>
+
 <div class="conclusion">
-  <strong>Conclusion — clip-curation filter.</strong>
-  Length alone isn't enough. For a clean training / evaluation set with
-  <em>potent</em> sentiment signal, the filter should be:
-  <ul style="margin-top: 1.2mm;">
-    <li><strong>Length:</strong> 10–40 words <em>or</em> 2–20 s audio (existing).</li>
-    <li><strong>Speech rate:</strong> gate on <strong>WPS ≈ 1.5–3.0</strong> (the band where
-      longer clips measurably carry more sentiment signal; above ~3 wps the signal flattens).</li>
+  <p style="margin:0 0 2mm 0;"><strong>Revised conclusion — what the duration study actually tells us.</strong></p>
+  <ul style="margin:0;">
+
+    <li><strong>No peak-and-fall.</strong><br>
+        Parliament speech sentiment is near-flat at F1 ≈ 0.88 – 0.95 from 4.5 s to 23 s.
+        No hidden peak above ROG's 6 s range.</li>
+
+    <li><strong>ROG's "longer = better" is a minimum-context effect.</strong><br>
+        Below ~3 s there's not enough lexical material to classify colloquial sentiment;
+        above that ROG plateaus at its domain ceiling (~0.65 F1).</li>
+
+    <li><strong>Domain beats length by ~0.3 F1.</strong><br>
+        Same model family, overlapping length band (4 – 6 s), same ordinal scheme —
+        parliament 0.93 vs dialogue 0.63. That's the real gap to close.</li>
+
+    <li><strong>Simpler curation rule.</strong><br>
+        For a dialogue training pool: ≥ 3 s (or ≥ 5 words) and a soft WPS cap
+        around 3.0. Length beyond ~4 s does not buy more sentiment signal on dialogue.</li>
+
+    <li><strong>Known gap in the comparison.</strong><br>
+        ROG and ParlaSpeech-SI differ in clip length, speech rate <em>and</em>
+        label prior — so the 0.3 F1 "domain gap" bundles all three. A matched-distribution
+        ParlaSpeech test set (sampled to mimic ROG's stats) is needed before we attribute
+        the gap to register alone.</li>
+
   </ul>
-  Fast, dense speech (&gt; 3.35 wps) is in the data but doesn't play by the same length rule —
-  worth tagging separately rather than mixing it into a general training pool.
 </div>
 
 <details>
-  <summary>How this was measured</summary>
+  <summary>How this was measured, and a note on ρ vs R²</summary>
   <div class="body">
     <ul>
-      <li>ROG-Dialog test (n=434) split into 4 equal-count WPS quartiles.</li>
-      <li>Inside each quartile, duration / word count binned into 3 equal-count sub-bins (~36 instances per bin).</li>
-      <li>Per bin, F1_3 is computed from each matrix cell's predictions; envelope = best-mixture-avg per backbone, self-labelled cells excluded.</li>
-      <li>Shape classification: ρ (Spearman of bin-center vs F1_3) ≥ +0.6 = monotone+, ≤ −0.6 = monotone−, |ρ| &lt; 0.3 = flat, else = weak.</li>
-      <li>Full artefacts: <code>misc/run_results/finetune_20261113_162724/sent_duration/</code>.</li>
+      <li><strong>Binning.</strong> Quantile (equal-count) bins over each test source's own
+        distribution. ROG test n = 434 → 5 duration bins of ~87 each; ParlaSpeech-SI test
+        n = 600 → 5 duration bins of ~120 each. Self-labelled cells (xlm-r-parlasent × any
+        mixture containing <code>P</code>) excluded from the envelope.</li>
+      <li><strong>ρ (Spearman)</strong> is used to classify the <em>shape</em> of the envelope
+        across bins — a rank correlation of (bin-centre, F1_3) across 3 – 5 points. Answers
+        "does F1 go up or down with duration?". Scale-free, so a small rise and a huge rise
+        score the same. ρ ≥ +0.6 = monotone+, ≤ −0.6 = monotone−, |ρ| &lt; 0.3 = flat.</li>
+      <li><strong>R²</strong> is used on the raw <em>regression</em> (predicting the 0–5
+        sentiment scalar on each test row). Answers "how much of the gold variance did the
+        model explain?" on the actual scale, so sign and magnitude both matter.
+        R² = 0 means the model is as good as predicting the mean;
+        R² &lt; 0 means it is <em>worse</em> than that.</li>
+      <li><strong>Why both.</strong> A model can rank test items well (high ρ) while being
+        offset in magnitude (low or negative R²). Several S-only cells on ROG show ρ ≈ +0.3
+        but R² ≈ −0.6 — they roughly sort dialogue utterances by polarity but predict the
+        wrong absolute values. One number alone would hide the other story.</li>
+      <li>Full artefacts: <code>misc/run_results/finetune_20261113_162724/sent_duration/</code>
+        (envelope PNGs, long CSVs, per-source reports for ROG and ParlaSpeech-SI).</li>
     </ul>
   </div>
 </details>

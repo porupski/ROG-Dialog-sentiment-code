@@ -62,7 +62,7 @@ from utils_sent_dur import (  # noqa: E402
 )
 
 
-TEST_SOURCE = "rog_dia"   # only source with both axes available
+DEFAULT_TEST_SOURCE = "rog_dia"
 
 
 def _try_plt():
@@ -105,7 +105,12 @@ def main():
     p.add_argument("--min_bin_n", type=int, default=None,
                    help="override config.json min_bin_n for within-quartile slices. "
                         "Default: use config value (25).")
+    p.add_argument("--test_source", default=DEFAULT_TEST_SOURCE,
+                   choices=["rog_dia", "parlaspeech_si"],
+                   help="test source to run the WPS control on. Requires both "
+                        "audio_sec and text_words to be available for the source.")
     args = p.parse_args()
+    TEST_SOURCE = args.test_source
 
     matrix_dir: Path = args.matrix_dir.resolve()
     if not matrix_dir.exists():
@@ -128,7 +133,7 @@ def main():
     index, info = build_metadata_index(TEST_SOURCE, cfg, ROOT)
     print(f"[{TEST_SOURCE}] metadata rows={info['n_rows']} axes={info['axes_supported']}")
     if "audio_sec" not in info["axes_supported"]:
-        raise SystemExit("audio_sec not available for rog_dia — nothing to control for")
+        raise SystemExit(f"audio_sec not available for {TEST_SOURCE} — nothing to control for")
 
     # 2) Pool prediction rows from the first available cell to compute WPS universe.
     #    (Every cell evaluates on the same test set, so axis values are identical.)
@@ -164,7 +169,7 @@ def main():
 
     plot_wps_distribution(
         wps_pool, quartile_edges,
-        out_dir / "speech_rate_distribution_rog_dia.png",
+        out_dir / f"speech_rate_distribution_{TEST_SOURCE}.png",
     )
 
     # 4) For each quartile, for each axis, bin + score + plot envelope.
@@ -242,9 +247,9 @@ def main():
                         env[bb][b] = None
 
             # Plot
-            title = (f"rog_dia · WPS {q_tag} ({wps_lo:.2f}, {wps_hi:.2f}] · {axis}\n"
+            title = (f"{TEST_SOURCE} · WPS {q_tag} ({wps_lo:.2f}, {wps_hi:.2f}] · {axis}\n"
                      f"(best-mixture avg, min_bin_n={cfg.min_bin_n})")
-            png_path = out_dir / f"envelope_rog_dia_{axis}_wps_{q_tag}.png"
+            png_path = out_dir / f"envelope_{TEST_SOURCE}_{axis}_wps_{q_tag}.png"
             plot_envelope_primary(
                 centers, env,
                 title=title,
@@ -285,7 +290,7 @@ def main():
                     })
 
     # 5) Write long CSV.
-    csv_path = out_dir / "matrix_duration_long_speech_rate.csv"
+    csv_path = out_dir / f"matrix_duration_long_speech_rate_{TEST_SOURCE}.csv"
     if long_rows:
         fields = list(long_rows[0].keys())
         with open(csv_path, "w", newline="") as f:
@@ -296,7 +301,7 @@ def main():
 
     # 6) Report + verdict.
     report_lines = []
-    report_lines.append("# Phase A' — speech-rate-controlled envelope on ROG-Dialog\n")
+    report_lines.append(f"# Phase A' — speech-rate-controlled envelope on `{TEST_SOURCE}`\n")
     report_lines.append(f"**matrix_dir:** `{matrix_dir}`\n")
     report_lines.append("Question: does the Phase-A finding — that ROG-Dialog sentiment signal "
                         "grows with utterance duration — survive holding speech rate constant?\n")
@@ -348,14 +353,14 @@ def main():
     report_lines.extend(verdict_lines)
     report_lines.append("")
     report_lines.append("## Artefacts\n")
-    report_lines.append("- `speech_rate_distribution_rog_dia.png` — WPS histogram + quartile cuts.")
-    report_lines.append("- `envelope_rog_dia_<axis>_wps_q{1..4}.png` — one envelope per WPS quartile.")
-    report_lines.append("- `matrix_duration_long_speech_rate.csv` — raw per-bin metrics.")
+    report_lines.append(f"- `speech_rate_distribution_{TEST_SOURCE}.png` — WPS histogram + quartile cuts.")
+    report_lines.append(f"- `envelope_{TEST_SOURCE}_<axis>_wps_q{{1..4}}.png` — one envelope per WPS quartile.")
+    report_lines.append(f"- `matrix_duration_long_speech_rate_{TEST_SOURCE}.csv` — raw per-bin metrics.")
 
-    report_path = out_dir / "speech_rate_report.md"
+    report_path = out_dir / f"speech_rate_report_{TEST_SOURCE}.md"
     report_path.write_text("\n".join(report_lines))
     print(f"wrote {report_path.relative_to(ROOT)}")
-    notes_path = out_dir / "envelope_notes_speech_rate.json"
+    notes_path = out_dir / f"envelope_notes_speech_rate_{TEST_SOURCE}.json"
     notes_path.write_text(json.dumps(shape_notes, indent=2))
     print(f"wrote {notes_path.relative_to(ROOT)}")
 
