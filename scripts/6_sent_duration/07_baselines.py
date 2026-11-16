@@ -183,6 +183,8 @@ def r2_ord(gold_ord, pred_ord):
 def score(gold6, pred6, gold3, pred3):
     g6o = [SENT_6_ORD[l] for l in gold6]
     p6o = [SENT_6_ORD[l] for l in pred6]
+    g3o = [SENT_3_ORD[l] for l in gold3]
+    p3o = [SENT_3_ORD[l] for l in pred3]
     return {
         "n": len(gold6),
         "macro_f1_6cls": macro_f1(gold6, pred6, LABELS_6),
@@ -190,6 +192,7 @@ def score(gold6, pred6, gold3, pred3):
         "accuracy_6cls": accuracy(gold6, pred6),
         "accuracy_3cls": accuracy(gold3, pred3),
         "spearman_rho_6cls": spearman_rho(g6o, p6o),
+        "spearman_rho_3cls": spearman_rho(g3o, p3o),
         "mae_ord_6cls": mae_ord(g6o, p6o),
         "r2_ord_6cls": r2_ord(g6o, p6o),
     }
@@ -226,14 +229,144 @@ def run_majority(gold_rows, maj_6, maj_3):
 
 
 # ----------------------------------------------------------------------------
+# Ceiling — ROG curator (labels.sentiment) vs ROG annotator (labels.sentiment_annotated).
+# No model can beat this without overfitting to the curator's disagreements with the
+# annotator. Treat it as the "beyond this is noise" line in the comparison tables.
+# ----------------------------------------------------------------------------
+
+def load_rog_iaa_rows(split_filter, duration_filter):
+    """Return [{'sentiment' (curator), 'sentiment_annotated' (annotator), 'sentiment_3', ...}]
+    for rows where BOTH labels are present. split_filter: 'all' | 'train' | 'dev' | 'test'."""
+    rows = []
+    for r in _iter_rog(ROG_FULL_PATH):
+        if split_filter != "all" and r.get("split") != split_filter:
+            continue
+        labs = r.get("labels") or {}
+        s = labs.get("sentiment")
+        sa = labs.get("sentiment_annotated")
+        if s is None or sa is None:
+            continue
+        if sa not in SENT_6_ORD or s not in SENT_6_ORD:
+            continue
+        if duration_filter == "2s":
+            dur = r["end_t"] - r["start_t"]
+            if not (MIN_DUR <= dur <= MAX_DUR):
+                continue
+        rows.append({
+            "sentiment":            s,
+            "sentiment_annotated":  sa,
+            "sentiment_3":          SENT_6_TO_3[s],
+            "sentiment_annotated_3":SENT_6_TO_3[sa],
+        })
+    return rows
+
+
+def run_iaa_ceiling(split_filter, duration_filter):
+    """Use annotator labels as 'pred', curator labels as 'gold'. Produces the ceiling
+    that any model will struggle to beat (training-set human noise)."""
+    rows = load_rog_iaa_rows(split_filter, duration_filter)
+    if not rows:
+        return None
+    g6 = [r["sentiment"] for r in rows]
+    p6 = [r["sentiment_annotated"] for r in rows]
+    g3 = [r["sentiment_3"] for r in rows]
+    p3 = [r["sentiment_annotated_3"] for r in rows]
+    return score(g6, p6, g3, p3)
+
+
+# ----------------------------------------------------------------------------
+# Stock ParlaSent zero-shot — no fine-tune, just the released classla/xlm-r-parlasent
+# regression head over whatever eval set. torch + transformers must be in the env.
+# ----------------------------------------------------------------------------
+
+def _load_parlasent():
+    """Returns (model, tokenizer, device). Caches on module import; raises on missing deps."""
+    import torch
+    from transformers import AutoModelForSequenceClassification, AutoTokenizer
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    name = "classla/xlm-r-parlasent"
+    tok = AutoTokenizer.from_pretrained(name)
+    model = AutoModelForSequenceClassification.from_pretrained(name).to(device).eval()
+    return model, tok, device
+
+
+def _parlasent_predict(texts, model, tok, device, batch_size=32, max_length=256):
+    """Return list of (pred_6cls_label, pred_3cls_label) for each input text.
+    The ParlaSent head outputs a scalar on ~[0,5]; we round-and-clip to int 0..5."""
+    import torch
+    out = []
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i + batch_size]
+        enc = tok(batch, truncation=True, padding=True,
+                  max_length=max_length, return_tensors="pt").to(device)
+        with torch.no_grad():
+            logits = model(**enc).logits.squeeze(-1).detach().cpu().numpy()
+        for v in logits:
+            idx = int(max(0, min(5, round(float(v)))))
+            s6 = LABELS_6[idx]
+            s3 = SENT_6_TO_3[s6]
+            out.append((s6, s3))
+    return out
+
+
+def run_parlasent_zs(rows_with_text):
+    """rows_with_text: list of {'sentiment','sentiment_3','text'}. Returns a score dict or None."""
+    try:
+        model, tok, device = _load_parlasent()
+    except Exception as e:
+        print(f"  [parlasent-zs] skipped — {type(e).__name__}: {e}")
+        return None
+    texts = [r["text"] for r in rows_with_text]
+    preds = _parlasent_predict(texts, model, tok, device)
+    g6 = [r["sentiment"] for r in rows_with_text]
+    g3 = [r["sentiment_3"] for r in rows_with_text]
+    p6 = [p[0] for p in preds]
+    p3 = [p[1] for p in preds]
+    return score(g6, p6, g3, p3)
+
+
+def load_subset170_with_text():
+    rows = []
+    with open(SUBSET_PATH) as f:
+        for line in f:
+            r = json.loads(line)
+            rows.append({
+                "sentiment":   r["sentiment"],
+                "sentiment_3": r["sentiment_3"],
+                "text":        r["text"],
+            })
+    return rows
+
+
+def load_rog_test_with_text(duration_filter):
+    rows = []
+    for r in _iter_rog(ROG_FULL_PATH):
+        if r.get("split") != "test":
+            continue
+        s = (r.get("labels") or {}).get("sentiment")
+        if s is None:
+            continue
+        if duration_filter == "2s":
+            dur = r["end_t"] - r["start_t"]
+            if not (MIN_DUR <= dur <= MAX_DUR):
+                continue
+        rows.append({
+            "sentiment":   s,
+            "sentiment_3": SENT_6_TO_3[s],
+            "text":        r["text"],
+        })
+    return rows
+
+
+# ----------------------------------------------------------------------------
 # Report
 # ----------------------------------------------------------------------------
 
 def fmt_metrics(m):
     return (f"F1_3 {m['macro_f1_3cls']:.3f} · F1_6 {m['macro_f1_6cls']:.3f} · "
             f"acc_3 {m['accuracy_3cls']:.3f} · acc_6 {m['accuracy_6cls']:.3f} · "
-            f"ρ {m['spearman_rho_6cls']:+.3f} · MAE {m['mae_ord_6cls']:.3f} · "
-            f"R² {m['r2_ord_6cls']:+.3f}")
+            f"ρ_3 {m['spearman_rho_3cls']:+.3f} · ρ_6 {m['spearman_rho_6cls']:+.3f} · "
+            f"MAE {m['mae_ord_6cls']:.3f} · R² {m['r2_ord_6cls']:+.3f}")
 
 
 def write_report(out_md, eval_set_name, n_rows, prior_src, maj_6, maj_3, results):
@@ -244,15 +377,20 @@ def write_report(out_md, eval_set_name, n_rows, prior_src, maj_6, maj_3, results
     lines.append(f"prior source: {prior_src} train split")
     lines.append(f"majority class: 6cls={maj_6}, 3cls={maj_3}")
     lines.append("")
-    lines.append("| strategy | F1_3 | F1_6 | acc_3 | acc_6 | ρ_6 | MAE_6 | R²_6 |")
-    lines.append("|---|---:|---:|---:|---:|---:|---:|---:|")
+    lines.append("| strategy | n | F1_3 | F1_6 | acc_3 | acc_6 | ρ_3 | ρ_6 | MAE_6 | R²_6 |")
+    lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for name, m in results.items():
+        if m is None:
+            lines.append(f"| {name} | — | — | — | — | — | — | — | — | — |")
+            continue
         lines.append(
             f"| {name} "
+            f"| {m['n']} "
             f"| {m['macro_f1_3cls']:.3f} "
             f"| {m['macro_f1_6cls']:.3f} "
             f"| {m['accuracy_3cls']:.3f} "
             f"| {m['accuracy_6cls']:.3f} "
+            f"| {m['spearman_rho_3cls']:+.3f} "
             f"| {m['spearman_rho_6cls']:+.3f} "
             f"| {m['mae_ord_6cls']:.3f} "
             f"| {m['r2_ord_6cls']:+.3f} |"
@@ -265,8 +403,10 @@ def main():
     ap.add_argument("--seed", type=int, default=SEED)
     ap.add_argument("--out-dir", default=str(OUT_DIR))
     ap.add_argument("--include-rog-full", action="store_true",
-                    help="Also run on ROG test split WITHOUT the 2s duration filter. "
-                         "Useful only after the user's full-ROG rerun has reused the same test set.")
+                    help="Also run on ROG test split WITHOUT the 2s duration filter.")
+    ap.add_argument("--parlasent-zs", action="store_true",
+                    help="Also run stock classla/xlm-r-parlasent (no fine-tune) over each eval set. "
+                         "Needs torch + transformers; slow on CPU for large sets.")
     args = ap.parse_args()
 
     out = Path(args.out_dir)
@@ -282,6 +422,10 @@ def main():
         "stratified_train_2s": run_stratified(subset, prior_6_2s, prior_3_2s, args.seed),
         "majority_train_2s": run_majority(subset, maj_6_2s, maj_3_2s),
     }
+    if args.parlasent_zs:
+        print("[parlasent-zs] subset_170 ...")
+        r_subset["parlasent_zero_shot"] = run_parlasent_zs(load_subset170_with_text())
+
     write_report(out / "baselines_subset170.md", "subset_174_seed42_v2 (170 rows)",
                  len(subset), "ROG (2s-filtered)", maj_6_2s, maj_3_2s, r_subset)
     all_results["subset_170"] = {"n": len(subset), "strategies": r_subset}
@@ -292,7 +436,13 @@ def main():
         "uniform": run_uniform(rog_test_2s, args.seed),
         "stratified_train_2s": run_stratified(rog_test_2s, prior_6_2s, prior_3_2s, args.seed),
         "majority_train_2s": run_majority(rog_test_2s, maj_6_2s, maj_3_2s),
+        # Ceiling computed on the test split only (what we actually evaluate against).
+        "iaa_ceiling_test_2s": run_iaa_ceiling(split_filter="test", duration_filter="2s"),
     }
+    if args.parlasent_zs:
+        print("[parlasent-zs] rog_test_2s ...")
+        r_rog_2s["parlasent_zero_shot"] = run_parlasent_zs(load_rog_test_with_text("2s"))
+
     write_report(out / "baselines_rog_test_2s.md", "ROG test split, 2s duration filter",
                  len(rog_test_2s), "ROG (2s-filtered)", maj_6_2s, maj_3_2s, r_rog_2s)
     all_results["rog_test_2s"] = {"n": len(rog_test_2s), "strategies": r_rog_2s}
@@ -305,25 +455,47 @@ def main():
             "uniform": run_uniform(rog_test_full, args.seed),
             "stratified_train_full": run_stratified(rog_test_full, prior_6_full, prior_3_full, args.seed),
             "majority_train_full": run_majority(rog_test_full, maj_6_full, maj_3_full),
+            "iaa_ceiling_test_full": run_iaa_ceiling(split_filter="test", duration_filter="full"),
         }
+        if args.parlasent_zs:
+            print("[parlasent-zs] rog_test_full ...")
+            r_rog_full["parlasent_zero_shot"] = run_parlasent_zs(load_rog_test_with_text("full"))
+
         write_report(out / "baselines_rog_test_full.md", "ROG test split, NO duration filter",
                      len(rog_test_full), "ROG (full, unfiltered)",
                      maj_6_full, maj_3_full, r_rog_full)
         all_results["rog_test_full"] = {"n": len(rog_test_full), "strategies": r_rog_full}
 
+    # --- ROG whole-corpus IAA (not an eval set per se; the structural ceiling) ---
+    iaa_all = {
+        "iaa_ceiling_rog_all_2s":   run_iaa_ceiling(split_filter="all", duration_filter="2s"),
+        "iaa_ceiling_rog_all_full": run_iaa_ceiling(split_filter="all", duration_filter="full"),
+    }
+    write_report(out / "ceiling_iaa_rog.md", "IAA ceiling — ROG curator vs annotator",
+                 0, "ROG", "n/a", "n/a", iaa_all)
+    all_results["iaa_ceiling"] = {
+        "n_2s":   (iaa_all["iaa_ceiling_rog_all_2s"] or {}).get("n", 0),
+        "n_full": (iaa_all["iaa_ceiling_rog_all_full"] or {}).get("n", 0),
+        "strategies": iaa_all,
+    }
+
     # Aggregated JSON for HTML consumption
     (out / "baselines.json").write_text(json.dumps({
         "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "seed": args.seed,
+        "parlasent_zs": args.parlasent_zs,
         "eval_sets": all_results,
     }, indent=2, ensure_ascii=False))
 
     # Console summary
     print("\n=== Baselines ===")
     for es, body in all_results.items():
-        print(f"\n[{es}]  n={body['n']}")
+        print(f"\n[{es}]")
         for name, m in body["strategies"].items():
-            print(f"  {name:<28} {fmt_metrics(m)}")
+            if m is None:
+                print(f"  {name:<30} (unavailable)")
+            else:
+                print(f"  {name:<30} {fmt_metrics(m)}")
 
 
 if __name__ == "__main__":
