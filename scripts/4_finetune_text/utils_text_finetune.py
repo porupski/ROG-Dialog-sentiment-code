@@ -67,6 +67,26 @@ def _reader_rog_dia_full(row: dict) -> dict | None:
     }
 
 
+def _reader_rog_dia_unfiltered(row: dict) -> dict | None:
+    """ROG-Dialog v2 with NO duration filter — companion to _reader_rog_dia_full. Backs the
+    rog_dia_full SOURCE used by R_full / SR_full / PR_full / SPR_full mixtures and by their
+    rog_dia_full eval split. Keeps the ~76 % of ROG that sits below 2 s (~10 k extra train
+    rows, ~1.8 k extra test rows)."""
+    labels = row.get("labels", {})
+    s = labels.get("sentiment")
+    if s is None:
+        return None
+    ord6 = SENT_6_STR_TO_ORD.get(s)
+    if ord6 is None:
+        return None
+    return {
+        "text": row["text"],
+        "label_scalar": float(ord6),
+        "split": row.get("split", "train"),
+        "instance_id": row["instance_id"],
+    }
+
+
 def _reader_parlaspeech_si(row: dict) -> dict | None:
     """ParlaSpeech-SI slim JSONL (prep_parlaspeech.py output). `sentiment.ParlaSent_logit`
     is the ParlaSent model's own regression output on the parliamentary audio transcript —
@@ -108,9 +128,19 @@ SOURCES: dict[str, dict] = {
         "modality": "text_transcript",
         "lang": "sl",
     },
+    "rog_dia_full": {
+        # Same JSONL as rog_dia; different reader → no 2 s duration filter.
+        # Keep ~76 % of ROG that the 2 s floor drops. Used for the full-ROG rerun.
+        "path": "data/rog_dialog_v2_instance.jsonl",
+        "reader": _reader_rog_dia_unfiltered,
+        "family": "dialog_speech",
+        "modality": "text_transcript",
+        "lang": "sl",
+    },
 }
 
-# Mixtures: train on the union of listed sources. Eval is ALWAYS on all three test splits.
+# Mixtures: train on the union of listed sources. Eval is on all entries of Config.eval_sources
+# (defaults below cover both the 2 s-filtered and the full ROG test for apples-to-apples).
 MIXTURES: dict[str, list[str]] = {
     "S":   ["parlasent_sl"],
     "P":   ["parlaspeech_si"],
@@ -119,6 +149,12 @@ MIXTURES: dict[str, list[str]] = {
     "SR":  ["parlasent_sl", "rog_dia"],
     "PR":  ["parlaspeech_si", "rog_dia"],
     "SPR": ["parlasent_sl", "parlaspeech_si", "rog_dia"],
+    # Full-ROG variants — train on the unfiltered ROG. Launch with
+    #   run_matrix.py --mixtures R_full SR_full PR_full SPR_full --use_gpu
+    "R_full":   ["rog_dia_full"],
+    "SR_full":  ["parlasent_sl", "rog_dia_full"],
+    "PR_full":  ["parlaspeech_si", "rog_dia_full"],
+    "SPR_full": ["parlasent_sl", "parlaspeech_si", "rog_dia_full"],
 }
 
 BACKBONES: list[str] = [
@@ -149,7 +185,9 @@ class Config:
     mix_mode: str = "concat"  # "concat" | "balanced" | "weighted"
     source_weights: dict = field(default_factory=dict)
     # Eval
-    eval_sources: list = field(default_factory=lambda: ["parlasent_sl", "parlaspeech_si", "rog_dia"])
+    eval_sources: list = field(default_factory=lambda: [
+        "parlasent_sl", "parlaspeech_si", "rog_dia", "rog_dia_full",
+    ])
     best_metric: str = "spearman"  # dev metric for best-epoch pick
     # Caps (test/demo)
     cap_train: int | None = None

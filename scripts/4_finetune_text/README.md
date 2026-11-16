@@ -37,6 +37,28 @@ python3 scripts/4_finetune_text/run_matrix.py --mode full --use_gpu \
     --mixtures S R SPR
 ```
 
+## Full-ROG rerun (no 2 s filter)
+
+The default ROG reader drops ~76 % of ROG below 2 s. The `rog_dia_full` source and the
+`_full` mixtures train on the whole ROG distribution instead. Launch:
+
+```bash
+tmux new -s six-full
+python3 scripts/4_finetune_text/run_matrix.py --mode full --use_gpu \
+    --mixtures R_full SR_full PR_full SPR_full 2>&1 \
+    | tee -a runs/finetune_rogfull_$(date +%F_%H%M).log
+```
+
+Every `_full` cell evaluates on four test sets: `parlasent_sl`, `parlaspeech_si`,
+`rog_dia` (2 s-filtered — apples-to-apples with the stable matrix), and `rog_dia_full`
+(unfiltered — the new picture). Compare with:
+
+```bash
+python3 scripts/6_sent_duration/08_compare_2s_vs_full.py \
+    --filtered runs/finetune_20261113_162724 \
+    --full     runs/finetune_rogfull_<stamp>
+```
+
 ## Outputs
 
 `runs/finetune_<timestamp>/`
