@@ -40,11 +40,16 @@ Haiku is ~13× cheaper for a 0.07 F1 penalty.
     <tr><td class="l model">Claude Haiku 4.5</td><td>0-shot</td><td class="mid">0.467</td><td class="meh">0.213</td><td class="meh">0.334</td><td class="meh">0.341</td></tr>
     <tr class="baseline"><td class="l">random (uniform)</td><td>baseline</td><td>0.350</td><td>0.183</td><td>+0.101</td><td>−0.044</td></tr>
     <tr class="baseline"><td class="l">majority-class</td><td>baseline</td><td>0.170</td><td>0.049</td><td>0.000</td><td>0.000</td></tr>
+    <tr class="baseline"><td class="l">ParlaSent zero-shot (stock)</td><td>baseline</td><td>0.384</td><td>0.215</td><td>+0.298</td><td>+0.410</td></tr>
   </tbody>
 </table>
 <p style="font-size:8.4pt; color:#666; margin-top:0;"><em>Baselines on the same 170-instance eval set.
-Subset is class-balanced by construction (29 per 6-class) so majority-class is a weak baseline here —
-random uniform is the honest floor to beat. Full numbers: <code>runs/baselines/baselines_subset170.md</code>.</em></p>
+Subset is class-balanced by construction (29 per 6-class), so <strong>majority-class is the weakest
+baseline here</strong> and <strong>random uniform is the honest floor</strong>. <strong>ParlaSent zero-shot</strong>
+is the stock <code>classla/xlm-r-parlasent</code> head applied to ROG transcripts with no fine-tune —
+it barely beats random on this balanced subset, i.e. parliamentary-trained sentiment transfers weakly to
+dialogue when all classes are equally represented. Flash few-shot beats ParlaSent ZS by +0.22 F1_3.
+Full numbers: <code>runs/baselines/baselines_subset170.md</code>.</em></p>
 
 <p class="hedge">
 On the chopping board: when the full-ROG matrix (Report 4) completes, this page will be

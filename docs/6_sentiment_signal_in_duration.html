@@ -60,10 +60,14 @@ most are &lt;6 s).</em>
 </p>
 
 <p class="hedge">
-On the chopping board. Current numbers are from the 2 s-filtered matrix, which drops ~76 % of
-ROG. The full-ROG rerun will populate a sub-2 s bin for the first time and lets us test the
-proportional-duration hypothesis (<em>a 1 s dialogue turn may carry roughly the signal of a
-5 s parliamentary turn</em>). Expect this page to change materially.
+On the chopping board. The full-ROG rerun completed (<code>runs/finetune_20261116_141318</code>),
+but the demo cap zeroed ROG out of PR_full and SPR_full cells — see Report 4's caveat panel.
+Clean reads: on the ≥2 s slice, full-ROG training barely moves the needle (best cell drops
+−0.008 F1_3 vs 2 s-filtered training). On the full test, the top cell reaches F1_3 ≈ 0.47 —
+only ~+0.05 above stock ParlaSent zero-shot. Sub-2 s clips are inherently hard and training
+on them did not rescue them. The proportional-duration hypothesis (<em>a 1 s dialogue turn may
+carry roughly the signal of a 5 s parliamentary turn</em>) remains open pending a denser
+topography eval.
 </p>
 
 <details>

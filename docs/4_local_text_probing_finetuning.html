@@ -43,23 +43,49 @@ Three XLM-R backbones × seven data mixtures (parliament text, parliament speech
     <tr class="warn"><td class="l model">XLM-R-parlasent</td><td>SPR</td><td class="good">0.549</td><td class="meh">0.268</td><td class="win">+0.216</td><td>⚠ self-labelled on P</td></tr>
     <tr class="baseline"><td class="l">random (uniform)</td><td>baseline</td><td>0.260</td><td>0.118</td><td>−2.371</td><td>natural prior</td></tr>
     <tr class="baseline"><td class="l">majority-class (neutralPositive)</td><td>baseline</td><td>0.271</td><td>0.125</td><td>−0.024</td><td>72% neutral on ROG</td></tr>
+    <tr class="baseline"><td class="l">ParlaSent zero-shot (stock, no fine-tune)</td><td>baseline</td><td>0.457</td><td>0.209</td><td>−0.728</td><td>stock parliament head</td></tr>
     <tr class="ceiling"><td class="l">IAA ceiling (annotator ↔ curator)</td><td>ceiling</td><td>0.699</td><td>0.625</td><td>+0.511</td><td>human noise floor</td></tr>
   </tbody>
 </table>
 <p style="font-size:8.4pt; color:#666; margin-top:0;"><em>Baselines + ceiling on the matrix's ROG test split (n=434, 2 s filter).
 <b>Majority-class</b> matches R-only cells on F1 — the plain-backbone collapse to "neutral" is literally what the majority
-baseline predicts. <b>SPR</b> beats majority by +0.28 F1_3; that's the real training gain. <b>IAA ceiling</b> uses
-<code>labels.sentiment_annotated</code> (the raw annotator) as "pred" and <code>labels.sentiment</code> (the curator)
-as "gold" — 77.3 % of rows agree, so F1_3 ≈ 0.70 is the realistic upper bound for any model on this gold.
-Current SPR sits at ~0.55 F1_3, so ~0.15 of real headroom remains before we would be overfitting curator noise.
+baseline predicts. <b>ParlaSent zero-shot</b> is the released <code>classla/xlm-r-parlasent</code> regression head applied
+to ROG with no further training — it beats majority by +0.19 F1_3, i.e. the parliamentary head already carries real
+sentiment signal into dialogue, but has R² = −0.73 because its output scale is calibrated for parliament, not for ROG's
+heavily-neutral distribution. <b>SPR</b> beats ParlaSent-ZS by +0.09 F1_3 and gets R² into the positives — that's where
+fine-tuning actually buys us performance. <b>IAA ceiling</b> uses <code>labels.sentiment_annotated</code> (the raw annotator)
+vs <code>labels.sentiment</code> (the curator) — 77.3 % of rows agree, so F1_3 ≈ 0.70 is the realistic upper bound on this
+gold. SPR has ~0.15 F1_3 of real headroom remaining before we would be overfitting curator noise.
 Full numbers: <code>runs/baselines/baselines_rog_test_2s.md</code> · ceiling detail:
 <code>runs/baselines/ceiling_iaa_rog.md</code>.</em></p>
 
 <div class="deliverable">
   <strong>Deliverable is a transformer speech-sentiment model, not an API pipeline.</strong>
-  Live recipe: <strong>XLM-R-ParlaSent × SPR mixture</strong>, text modality.
-  Full-ROG rerun in progress — this table will be refreshed with the winner (filtered vs full)
-  per <code>scripts/6_sent_duration/08_compare_2s_vs_full.py</code> once that batch lands.
+  Current live recipe: <strong>XLM-R-ParlaSent × R</strong> (F1_3 = 0.572 on 2 s-filtered test)
+  and <strong>XLM-R-large × SPR</strong> (F1_3 = 0.566, cleanest — no self-label caveat).
+  Mixing is <em>done</em>; next lever is OR-side <strong>context windows</strong> (see Report 2).
+</div>
+
+<div class="hedge">
+  <strong>Full-ROG rerun (<code>runs/finetune_20261116_141318</code>) completed with a caveat.</strong>
+  The demo cap (<code>cap_train=12000</code>) is applied to the merged train pool, first-source-first.
+  For <code>PR_full</code> and <code>SPR_full</code> the ParlaSpeech source alone exceeds the cap,
+  so ROG training rows were truncated to zero and those two cells effectively measured
+  parliament-only training. <code>R_full</code> and <code>SR_full</code> are clean.
+  Main reads from the clean cells:
+  <ul style="margin: 1mm 0;">
+    <li>On the ≥2 s test, the best full-trained cell drops only −0.008 F1_3 from its 2 s-trained twin
+        (<code>xlm-r-parlasent × R</code> 0.572 → <code>× R_full</code> 0.564). The 2 s filter
+        didn't handicap the ≥2 s slice.</li>
+    <li><code>xlm-r-parlasent × SR_full</code> <em>gains</em> +0.062 F1_3 on ≥2 s test vs its
+        2 s-trained twin — the one place full-ROG training genuinely helps.</li>
+    <li>On the full test (including sub-2 s), the top full-trained cell lands at F1_3 = 0.474 —
+        only ~+0.05 above stock ParlaSent-ZS (0.421). Sub-2 s clips are inherently hard; training
+        on them doesn't rescue them.</li>
+  </ul>
+  Full side-by-side: <code>misc/run_results/compare_2s_vs_full.md</code>. Before trusting PR_full
+  and SPR_full numbers, re-launch without the merged-pool cap (or fix <code>mix_train</code> to
+  cap per source).
 </div>
 
 <details>

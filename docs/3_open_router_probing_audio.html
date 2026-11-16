@@ -40,10 +40,13 @@ judgements sign-flip (Krippendorff α = −0.10 shot-flip, 6-class).
     <tr><td class="l model">Gemini Flash 3.8</td><td>few-shot</td><td class="meh">0.413</td><td class="bad">0.171</td><td class="bad">0.140</td><td class="bad">0.052</td></tr>
     <tr class="baseline"><td class="l">random (uniform)</td><td>baseline</td><td>0.350</td><td>0.183</td><td>+0.101</td><td>−0.044</td></tr>
     <tr class="baseline"><td class="l">majority-class</td><td>baseline</td><td>0.170</td><td>0.049</td><td>0.000</td><td>0.000</td></tr>
+    <tr class="baseline"><td class="l">ParlaSent zero-shot (text, stock)</td><td>baseline</td><td>0.384</td><td>0.215</td><td>+0.298</td><td>+0.410</td></tr>
   </tbody>
 </table>
-<p style="font-size:8.4pt; color:#666; margin-top:0;"><em>Same 170-instance eval set as Report 2; baselines identical.
-Audio Flash 0-shot beats random by +0.23 F1_3. Full numbers: <code>runs/baselines/baselines_subset170.md</code>.</em></p>
+<p style="font-size:8.4pt; color:#666; margin-top:0;"><em>Same 170-instance eval set as Report 2; baselines identical (ParlaSent zero-shot reads the
+transcript, not the audio — included here as a text-only ceiling for the audio prompt to be compared against).
+Audio Flash 0-shot beats random by +0.23 F1_3 and sits ~0.20 F1_3 above the stock ParlaSent text baseline.
+Full numbers: <code>runs/baselines/baselines_subset170.md</code>.</em></p>
 
 <p class="hedge">
 Shelved. Audio does not currently beat text on 6-class; few-shot is actively harmful.
