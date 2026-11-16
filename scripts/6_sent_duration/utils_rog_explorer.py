@@ -193,6 +193,193 @@ def plot_sentiment_topography_2d(df: pd.DataFrame, n_dur_bins=5, n_wps_bins=5,
     return fig
 
 
+# ---------------------------------------------------------------------------
+# F1 topography — model performance per (duration × WPS) bin.
+# This is the "where does the model actually work?" view, not the raw-label view.
+# ---------------------------------------------------------------------------
+
+def _macro_f1(gold, pred, labels):
+    import numpy as np
+    f1s = []
+    for lbl in labels:
+        tp = sum(1 for g, p in zip(gold, pred) if g == lbl and p == lbl)
+        fp = sum(1 for g, p in zip(gold, pred) if g != lbl and p == lbl)
+        fn = sum(1 for g, p in zip(gold, pred) if g == lbl and p != lbl)
+        prec = tp / (tp + fp) if tp + fp else 0.0
+        rec = tp / (tp + fn) if tp + fn else 0.0
+        f1s.append(2 * prec * rec / (prec + rec) if prec + rec else 0.0)
+    return float(np.mean(f1s))
+
+
+def f1_topography(df: pd.DataFrame, cell_preds: dict, cell_key: str | None = None,
+                   n_dur_bins=5, n_wps_bins=5, wps_clip=10.0, mode="quantile",
+                   scheme: str = "3"):
+    """Compute per-(duration × WPS)-bin macro-F1 for one matrix cell or the best-cell
+    envelope.
+
+    cell_key: either a '{backbone}__{mixture}' key (one specific cell) or None
+              (envelope — best-F1-per-bin across all available cells, matching the
+              convention used by 01/02 duration scripts).
+    scheme:   '3' or '6' — which F1 to compute per bin.
+
+    Returns (dur_edges, wps_edges, f1_matrix, count_matrix, chosen_cell_matrix).
+    f1_matrix[i_wps, j_dur] = macro-F1 in that bin (NaN if n<min_n).
+    chosen_cell_matrix[i, j] = the cell name picked by the envelope in that bin (None if
+    cell_key was specified).
+    """
+    if scheme not in ("3", "6"):
+        raise ValueError("scheme must be '3' or '6'")
+    labels = [
+        "negative", "neutral", "positive",
+    ] if scheme == "3" else LABELS_6
+
+    # Build an instance_id -> (duration, wps) lookup from the dataframe
+    dur_map = dict(zip(df["instance_id"], df["duration"]))
+    wps_map = dict(zip(df["instance_id"], df["wps"]))
+
+    # Filter df to only rows that have matrix predictions (otherwise bins are built off
+    # the whole corpus but graded on a fraction of it).
+    scored_ids = set(cell_preds.keys())
+    scored_df = df[df["instance_id"].isin(scored_ids)].copy()
+    if scored_df.empty:
+        raise RuntimeError("no overlap between df and cell_preds — did the matrix test "
+                           "split change? Pass the matrix dir that produced these predictions.")
+
+    dur_edges = _bin_edges(scored_df["duration"], n_dur_bins, mode=mode)
+    wps_edges = _bin_edges(scored_df["wps"], n_wps_bins, mode=mode, clip=wps_clip)
+
+    # For every scored instance_id, locate its (i_wps, j_dur) cell.
+    def _locate(dur, wps_v):
+        wps_v_c = min(max(wps_v, 0), wps_clip)
+        j = int(np.searchsorted(dur_edges, dur, side="right") - 1)
+        i = int(np.searchsorted(wps_edges, wps_v_c, side="right") - 1)
+        j = min(max(j, 0), n_dur_bins - 1)
+        i = min(max(i, 0), n_wps_bins - 1)
+        return i, j
+
+    # Pick a candidate cell list.
+    if cell_key is not None:
+        candidate_cells = [cell_key]
+    else:
+        all_cells = sorted({p["cell"] for preds in cell_preds.values() for p in preds})
+        candidate_cells = all_cells
+
+    # For each candidate cell, compute F1 per bin. Then take argmax per bin.
+    f1_per_cell = {}
+    for ck in candidate_cells:
+        bins_gold = defaultdict(list)
+        bins_pred = defaultdict(list)
+        for iid, preds in cell_preds.items():
+            p = next((x for x in preds if x["cell"] == ck), None)
+            if p is None:
+                continue
+            dur = dur_map.get(iid); wps_v = wps_map.get(iid)
+            if dur is None or wps_v is None:
+                continue
+            i, j = _locate(dur, wps_v)
+            if scheme == "3":
+                bins_gold[(i, j)].append(p["gold_3"])
+                bins_pred[(i, j)].append(p["pred_3"])
+            else:
+                bins_gold[(i, j)].append(p["gold_6"])
+                bins_pred[(i, j)].append(p["pred_6"])
+        mat = np.full((n_wps_bins, n_dur_bins), np.nan)
+        cnt = np.zeros((n_wps_bins, n_dur_bins), dtype=int)
+        for (i, j), g in bins_gold.items():
+            if len(g) == 0:
+                continue
+            mat[i, j] = _macro_f1(g, bins_pred[(i, j)], labels)
+            cnt[i, j] = len(g)
+        f1_per_cell[ck] = (mat, cnt)
+
+    # Envelope: per bin, pick argmax F1 across candidate cells. Keep the cell name.
+    f1 = np.full((n_wps_bins, n_dur_bins), np.nan)
+    cnt_out = np.zeros((n_wps_bins, n_dur_bins), dtype=int)
+    chosen = np.full((n_wps_bins, n_dur_bins), None, dtype=object)
+    for i in range(n_wps_bins):
+        for j in range(n_dur_bins):
+            best_v, best_ck, best_n = np.nan, None, 0
+            for ck, (mat, cnt) in f1_per_cell.items():
+                v = mat[i, j]; n = cnt[i, j]
+                if np.isnan(v):
+                    continue
+                if np.isnan(best_v) or v > best_v:
+                    best_v, best_ck, best_n = v, ck, n
+            if best_ck is not None:
+                f1[i, j] = best_v
+                cnt_out[i, j] = best_n
+                chosen[i, j] = best_ck
+    return dur_edges, wps_edges, f1, cnt_out, chosen
+
+
+def plot_f1_topography_2d(df: pd.DataFrame, cell_preds: dict, cell_key: str | None = None,
+                           scheme: str = "3", n_dur_bins=5, n_wps_bins=5,
+                           wps_clip=10.0, mode="quantile"):
+    """Heatmap of macro-F1 per (duration × WPS) bin. Cell=None → best-cell envelope."""
+    import matplotlib.pyplot as plt
+    dur_edges, wps_edges, f1, cnt, chosen = f1_topography(
+        df, cell_preds, cell_key=cell_key, scheme=scheme,
+        n_dur_bins=n_dur_bins, n_wps_bins=n_wps_bins, wps_clip=wps_clip, mode=mode)
+
+    fig, ax = plt.subplots(figsize=(8.5, 5.5))
+    im = ax.imshow(f1, origin="lower", aspect="auto",
+                   extent=[dur_edges[0], dur_edges[-1], wps_edges[0], wps_edges[-1]],
+                   cmap="RdYlGn", vmin=0.0, vmax=1.0)
+    for i in range(n_wps_bins):
+        for j in range(n_dur_bins):
+            if cnt[i, j] == 0:
+                continue
+            x = 0.5 * (dur_edges[j] + dur_edges[j + 1])
+            y = 0.5 * (wps_edges[i] + wps_edges[i + 1])
+            ck = chosen[i, j] if cell_key is None else cell_key
+            label = f"{f1[i, j]:.2f}\nn={cnt[i, j]}"
+            if cell_key is None and ck is not None:
+                # abbreviate "xlm-r-parla__SPR" -> "parla×SPR"
+                bb, mix = ck.split("__", 1)
+                short = bb.replace("xlm-roberta-", "").replace("xlm-r-", "")
+                label += f"\n{short}×{mix}"
+            ax.text(x, y, label, ha="center", va="center", fontsize=7, color="black")
+
+    cbar = fig.colorbar(im, ax=ax, label=f"macro-F1 ({scheme}-cls)")
+    ax.set_xlabel("duration (s)")
+    ax.set_ylabel("WPS (clipped)")
+    title_cell = cell_key if cell_key is not None else "best-cell envelope"
+    ax.set_title(f"F1 topography ({scheme}-cls) — {title_cell}  "
+                 f"({n_dur_bins}×{n_wps_bins} {mode} bins)")
+    fig.tight_layout()
+    return fig
+
+
+def plot_f1_topography_3d(df: pd.DataFrame, cell_preds: dict, cell_key: str | None = None,
+                           scheme: str = "3", n_dur_bins=5, n_wps_bins=5,
+                           wps_clip=10.0, mode="quantile"):
+    """3-D surface of macro-F1 over (duration × WPS). Cell=None → best-cell envelope."""
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+    dur_edges, wps_edges, f1, cnt, _ = f1_topography(
+        df, cell_preds, cell_key=cell_key, scheme=scheme,
+        n_dur_bins=n_dur_bins, n_wps_bins=n_wps_bins, wps_clip=wps_clip, mode=mode)
+
+    dur_centres = 0.5 * (dur_edges[:-1] + dur_edges[1:])
+    wps_centres = 0.5 * (wps_edges[:-1] + wps_edges[1:])
+    X, Y = np.meshgrid(dur_centres, wps_centres)
+
+    fig = plt.figure(figsize=(8.5, 5.5))
+    ax = fig.add_subplot(111, projection="3d")
+    surf = ax.plot_surface(X, Y, f1, cmap="RdYlGn", vmin=0.0, vmax=1.0,
+                           edgecolor="#333", linewidth=0.3, alpha=0.95)
+    ax.set_xlabel("duration (s)")
+    ax.set_ylabel("WPS")
+    ax.set_zlabel(f"macro-F1 ({scheme}-cls)")
+    ax.set_zlim(0, 1)
+    ax.view_init(elev=22, azim=-135)
+    fig.colorbar(surf, ax=ax, shrink=0.65, label="macro-F1")
+    title_cell = cell_key if cell_key is not None else "best-cell envelope"
+    ax.set_title(f"F1 topography (3-D, {scheme}-cls) — {title_cell}")
+    fig.tight_layout()
+    return fig
+
+
 def plot_sentiment_topography_3d(df: pd.DataFrame, n_dur_bins=5, n_wps_bins=5,
                                   wps_clip=10.0, mode="quantile"):
     """3-D surface (duration × WPS × mean sentiment ordinal). Companion to the 2-D heatmap.

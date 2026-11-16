@@ -31,7 +31,9 @@ Metrics (per scheme):
 
 import argparse
 import json
+import os
 import random
+import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -280,10 +282,26 @@ def run_iaa_ceiling(split_filter, duration_filter):
 # ----------------------------------------------------------------------------
 
 def _load_parlasent():
-    """Returns (model, tokenizer, device). Caches on module import; raises on missing deps."""
+    """Returns (model, tokenizer, device).
+
+    GPU-safety: honour the CUDA_VISIBLE_DEVICES env var set by the caller BEFORE torch
+    was imported in this process. If CVD is unset or empty, force CPU — do NOT grab
+    whatever GPU happens to be visible on a shared machine. Callers wanting GPU must
+    pass --gpu N on the CLI, which sets CVD=N before this function imports torch.
+    """
+    import os
+    cvd = os.environ.get("CUDA_VISIBLE_DEVICES", None)
+    if cvd is None or cvd == "":
+        # Explicit opt-out of CUDA. torch may still have been compiled with CUDA, but
+        # setting CVD='' before the import prevents any device from being seen.
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
     import torch
     from transformers import AutoModelForSequenceClassification, AutoTokenizer
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # Only use cuda if the caller explicitly reserved a specific device index (CVD set to
+    # a non-empty value) AND torch sees at least one device after the CVD mask.
+    use_cuda = (cvd not in (None, "")) and torch.cuda.is_available()
+    device = "cuda" if use_cuda else "cpu"
+    print(f"  [parlasent-zs] device={device}  CUDA_VISIBLE_DEVICES={cvd!r}")
     name = "classla/xlm-r-parlasent"
     tok = AutoTokenizer.from_pretrained(name)
     model = AutoModelForSequenceClassification.from_pretrained(name).to(device).eval()
@@ -399,6 +417,27 @@ def write_report(out_md, eval_set_name, n_rows, prior_src, maj_6, maj_3, results
 
 
 def main():
+    # GPU guard — sets CUDA_VISIBLE_DEVICES *before* any torch import happens in this
+    # process. Parse argv first for --gpu, then set the env var. No --gpu flag → force CPU
+    # by setting CVD="". This mirrors the strict guard used by scripts/4_finetune_text/run_matrix.py.
+    import os
+    # Lightweight pre-parse (don't use argparse yet — we need CVD set before anything else).
+    _gpu_val = None
+    _argv = sys.argv[1:]
+    for i, a in enumerate(_argv):
+        if a == "--gpu" and i + 1 < len(_argv):
+            _gpu_val = _argv[i + 1]
+            break
+        if a.startswith("--gpu="):
+            _gpu_val = a.split("=", 1)[1]
+            break
+    if _gpu_val is None:
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    else:
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(_gpu_val)
+    # NOTE: do not `import torch` anywhere at module scope. Only _load_parlasent() imports
+    # torch, and that only happens if --parlasent-zs is passed.
+
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--seed", type=int, default=SEED)
     ap.add_argument("--out-dir", default=str(OUT_DIR))
@@ -407,6 +446,9 @@ def main():
     ap.add_argument("--parlasent-zs", action="store_true",
                     help="Also run stock classla/xlm-r-parlasent (no fine-tune) over each eval set. "
                          "Needs torch + transformers; slow on CPU for large sets.")
+    ap.add_argument("--gpu", type=str, default=None,
+                    help="Reserve a specific GPU index for --parlasent-zs (e.g. --gpu 2). "
+                         "Omit to force CPU. CUDA_VISIBLE_DEVICES is set BEFORE torch import.")
     args = ap.parse_args()
 
     out = Path(args.out_dir)
