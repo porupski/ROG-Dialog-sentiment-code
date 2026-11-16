@@ -9,6 +9,11 @@ Three data sources, same ParlaSent 0–5 ordinal schema:
 
 See [`collective_results.md`](collective_results.md) for numbers and [`development_log.md`](development_log.md) for the how/why trail.
 
+Webpage hosting active results: https://porupski.github.io/ROG-Dialog-sentiment-code/
+
+ROG Dialog v2 on Clarin.si: http://hdl.handle.net/11356/2637
+
+
 ---
 
 ## Layout
