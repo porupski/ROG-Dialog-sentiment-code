@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>6 · Sentiment signal across duration</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<nav class="report-nav">
+  <span class="brand">Sentiment Search</span>
+  <a href="index.html">index</a> <span class="sep">·</span>
+  <a href="1_rog_dia_v2_data_overview.html">1 · data overview</a> <span class="sep">·</span>
+  <a href="2_open_router_probing_text.html">2 · OR text</a> <span class="sep">·</span>
+  <a href="3_open_router_probing_audio.html">3 · OR audio</a> <span class="sep">·</span>
+  <a href="4_local_text_probing_finetuning.html">4 · local text</a> <span class="sep">·</span>
+  <a href="5_local_audio_probing_finetuning.html">5 · local audio</a> <span class="sep">·</span>
+  <span class="current">6 · duration</span>
+</nav>
+
+<h1>Sentiment signal across duration
+  <span class="sub">Duration isn't the driver — domain is. Numbers are from the 2 s-filtered matrix
+  and will be redone on the full-ROG matrix.</span>
+</h1>
+
+<p class="finding">
+Comparing sentiment signal across clip length on <strong>ROG-Dialog</strong> (short colloquial, 2–8 s)
+and <strong>ParlaSpeech-SI</strong> (parliament speech, 2–30 s). The "signal climbs with duration" story
+on ROG turns out to be a <strong>floor effect</strong>, not a universal law — parliament speech sits at
+F1 ≈ 0.9 across every duration bin, dialogue climbs from 0.5 to 0.65 then stops. The ~0.3 F1 gap
+is <strong>domain</strong>, not length.
+</p>
+
+<table>
+  <thead>
+    <tr><th class="l">test source · best cell</th><th>duration range</th>
+        <th>~2 s</th><th>~4 s</th><th>~8 s</th><th>~14 s</th><th>~23 s</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="l">ROG-Dialog · xlm-r-parla × SPR</td><td>2 – 6 s</td>
+        <td class="meh">0.495</td><td class="meh">0.469</td><td class="good">0.616</td>
+        <td style="background:#eee">n/a</td><td style="background:#eee">n/a</td></tr>
+    <tr><td class="l">ROG-Dialog · xlm-r-parlasent × R</td><td>2 – 6 s</td>
+        <td class="good">0.555</td><td class="meh">0.483</td><td class="win">0.657</td>
+        <td style="background:#eee">n/a</td><td style="background:#eee">n/a</td></tr>
+    <tr><td class="l">ParlaSpeech-SI · xlm-r-parla × P</td><td>2 – 30 s</td>
+        <td style="background:#eee">n/a</td>
+        <td class="win">0.937</td><td class="win">0.952</td><td class="win">0.935</td><td class="win">0.916</td></tr>
+    <tr><td class="l">ParlaSpeech-SI · xlm-r-parlasent × S</td><td>2 – 30 s</td>
+        <td style="background:#eee">n/a</td>
+        <td class="win">0.891</td><td class="good">0.837</td><td class="win">0.890</td><td class="win">0.876</td></tr>
+  </tbody>
+</table>
+
+<p style="font-size:8.6pt; color:#666; margin-top:0;">
+<em>Values are F1_3 at the quantile-bin centre closest to each named column, best-mixture-avg,
+self-labelled cells excluded. 2 s and 4 s bins don't exist on ParlaSpeech-SI (parliament utterances
+start at ~2.25 s and cluster longer); 8–23 s bins don't exist on ROG (dialogue clips cap at ~12 s,
+most are &lt;6 s).</em>
+</p>
+
+<p class="hedge">
+On the chopping board. Current numbers are from the 2 s-filtered matrix, which drops ~76 % of
+ROG. The full-ROG rerun will populate a sub-2 s bin for the first time and lets us test the
+proportional-duration hypothesis (<em>a 1 s dialogue turn may carry roughly the signal of a
+5 s parliamentary turn</em>). Expect this page to change materially.
+</p>
+
+<details>
+  <summary>Speech-rate control — same conclusion from a different angle</summary>
+  <div class="body">
+    <ul>
+      <li>Split each test source into 4 speech-rate quartiles (words / second) and re-bin inside each quartile.</li>
+      <li>On <strong>ParlaSpeech-SI · audio-sec</strong>: 0 / 4 quartiles show a monotone+ shape on xlm-r-parla and xlm-r-parlasent. Duration doesn't matter within-WPS.</li>
+      <li>On <strong>ROG · audio-sec</strong>: 1 / 4 quartiles survive per backbone — partial confound.</li>
+      <li>WPS ranges also split by domain: parliament speakers run 0.9 – 4.4 wps (prepared, slow); ROG speakers 0.25 – 5.4 wps (conversational, wider spread).</li>
+      <li>Full WPS reports: <code>misc/run_results/finetune_20261113_162724/sent_duration/speech_rate_report_rog_dia.md</code>,
+          <code>speech_rate_report_parlaspeech_si.md</code>.</li>
+    </ul>
+  </div>
+</details>
+
+<div class="conclusion">
+  <p style="margin:0 0 2mm 0;"><strong>Revised conclusion — what the duration study tells us right now.</strong></p>
+  <ul style="margin:0;">
+
+    <li><strong>No peak-and-fall.</strong><br>
+        Parliament speech sentiment is near-flat at F1 ≈ 0.88 – 0.95 from 4.5 s to 23 s.
+        No hidden peak above ROG's 6 s range.</li>
+
+    <li><strong>ROG's "longer = better" is a minimum-context effect.</strong><br>
+        Below ~3 s there's not enough lexical material to classify colloquial sentiment;
+        above that ROG plateaus at its domain ceiling (~0.65 F1).</li>
+
+    <li><strong>Domain beats length by ~0.3 F1.</strong><br>
+        Same model family, overlapping length band (4 – 6 s), same ordinal scheme —
+        parliament 0.93 vs dialogue 0.63. That's the real gap to close.</li>
+
+    <li><strong>Simpler curation rule.</strong><br>
+        For a dialogue training pool: ≥ 3 s (or ≥ 5 words) and a soft WPS cap
+        around 3.0. Length beyond ~4 s does not buy more sentiment signal on dialogue.</li>
+
+    <li><strong>Known gap in the comparison.</strong><br>
+        ROG and ParlaSpeech-SI differ in clip length, speech rate <em>and</em>
+        label prior — so the 0.3 F1 "domain gap" bundles all three. A matched-distribution
+        ParlaSpeech test set (sampled to mimic ROG's stats) is needed before we attribute
+        the gap to register alone.</li>
+
+  </ul>
+</div>
+
+<details>
+  <summary>How this was measured, and a note on ρ vs R²</summary>
+  <div class="body">
+    <ul>
+      <li><strong>Binning.</strong> Quantile (equal-count) bins over each test source's own
+        distribution. ROG test n = 434 → 5 duration bins of ~87 each; ParlaSpeech-SI test
+        n = 600 → 5 duration bins of ~120 each. Self-labelled cells (xlm-r-parlasent × any
+        mixture containing <code>P</code>) excluded from the envelope.</li>
+      <li><strong>ρ (Spearman)</strong> is used to classify the <em>shape</em> of the envelope
+        across bins — a rank correlation of (bin-centre, F1_3) across 3 – 5 points. Answers
+        "does F1 go up or down with duration?". Scale-free, so a small rise and a huge rise
+        score the same. ρ ≥ +0.6 = monotone+, ≤ −0.6 = monotone−, |ρ| &lt; 0.3 = flat.</li>
+      <li><strong>R²</strong> is used on the raw <em>regression</em> (predicting the 0–5
+        sentiment scalar on each test row). Answers "how much of the gold variance did the
+        model explain?" on the actual scale, so sign and magnitude both matter.
+        R² = 0 means the model is as good as predicting the mean;
+        R² &lt; 0 means it is <em>worse</em> than that.</li>
+      <li><strong>Why both.</strong> A model can rank test items well (high ρ) while being
+        offset in magnitude (low or negative R²). Several S-only cells on ROG show ρ ≈ +0.3
+        but R² ≈ −0.6 — they roughly sort dialogue utterances by polarity but predict the
+        wrong absolute values. One number alone would hide the other story.</li>
+      <li>Full artefacts: <code>misc/run_results/finetune_20261113_162724/sent_duration/</code>
+        (envelope PNGs, long CSVs, per-source reports for ROG and ParlaSpeech-SI).</li>
+    </ul>
+  </div>
+</details>
+
+<footer>
+Code: <code>scripts/6_sent_duration/{01_bin_predictions,02_envelope_report,03_speech_rate_control,05_signal_topography}.py</code>
+· full-ROG comparison: <code>scripts/6_sent_duration/08_compare_2s_vs_full.py</code>
+</footer>
+
+</body>
+</html>

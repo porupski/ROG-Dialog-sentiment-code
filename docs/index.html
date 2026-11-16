@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sentiment Search — ROG-Dialog v2 · index</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<h1>Sentiment Search — ROG-Dialog v2
+  <span class="sub">Where does the sentiment signal live in short Slovenian dialogue?
+  Six reports: datasets, two API probes, two local probes, a duration study.</span>
+</h1>
+
+<p>Ivan Porupski — Jožef Stefan Institute. Reports are static HTML, hosted on GitHub
+Pages. Numbers come from the matrix run at
+<code>misc/run_results/finetune_20261113_162724/</code> plus the OpenRouter batches
+in <code>runs/</code>; pipeline code is in <code>scripts/</code>.</p>
+
+<div class="report-list">
+
+  <a class="r-card" href="1_rog_dia_v2_data_overview.html">
+    <div><span class="r-num">1.</span><span class="r-title">ROG-Dialog v2 — data overview</span>
+      <span class="r-tag active">current</span></div>
+    <div class="r-gloss">The three Slovenian corpora in play (ROG-Dialog v2, ParlaSpeech-SI, ParlaSent-SL).
+      Modality, splits, label priors, duration and speech-rate stats. Read this first.</div>
+  </a>
+
+  <a class="r-card" href="2_open_router_probing_text.html">
+    <div><span class="r-num">2.</span><span class="r-title">OpenRouter — text probing</span>
+      <span class="r-tag chopblock">on the chopping board</span></div>
+    <div class="r-gloss">Gemini Flash and Claude Haiku on ROG transcripts, zero-shot and few-shot,
+      3-class and 6-class. Baselines included. Will be re-run with full ROG once that matrix is in.</div>
+  </a>
+
+  <a class="r-card" href="3_open_router_probing_audio.html">
+    <div><span class="r-num">3.</span><span class="r-title">OpenRouter — audio probing</span>
+      <span class="r-tag shelved">shelved</span></div>
+    <div class="r-gloss">Gemini Flash and Gemini Carbon on raw ROG audio. Zero-shot hits text-ceiling;
+      few-shot destroys the audio prompt. Kept for reference; not the deliverable path.</div>
+  </a>
+
+  <a class="r-card" href="4_local_text_probing_finetuning.html">
+    <div><span class="r-num">4.</span><span class="r-title">Local — text fine-tuning</span>
+      <span class="r-tag active">current</span></div>
+    <div class="r-gloss">3 XLM-R backbones × 7 training mixtures regression matrix. Parliament → dialogue
+      transfer broken; SPR mixture holds up. Baselines + per-cell numbers.</div>
+  </a>
+
+  <a class="r-card" href="5_local_audio_probing_finetuning.html">
+    <div><span class="r-num">5.</span><span class="r-title">Local — audio fine-tuning</span>
+      <span class="r-tag placeholder">placeholder</span></div>
+    <div class="r-gloss">The final-stretch deliverable: a transformer speech-sentiment regressor for
+      SL dialogue. Nothing on the board yet.</div>
+  </a>
+
+  <a class="r-card" href="6_sentiment_signal_in_duration.html">
+    <div><span class="r-num">6.</span><span class="r-title">Sentiment signal across duration</span>
+      <span class="r-tag chopblock">on the chopping board</span></div>
+    <div class="r-gloss">ROG F1 climbs with clip length then plateaus at ~0.65; ParlaSpeech stays
+      flat near 0.9 across all lengths. Domain gap, not length. Being redone on full-ROG.</div>
+  </a>
+
+</div>
+
+<h2>Legacy</h2>
+<p>The original monolith report lives at
+<a href="legacy/report_sentiment_signal_hunt.html">legacy/report_sentiment_signal_hunt.html</a>.
+It is superseded by reports 1 – 6 above; kept for diff / review only.</p>
+
+<footer>
+Code: <code>github.com/porupski/Sentiment_Search</code>
+(private) · contact: ivan.porupski@ijs.si
+</footer>
+
+</body>
+</html>

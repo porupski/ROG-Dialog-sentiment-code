@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>1 · ROG-Dialog v2 — data overview</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<nav class="report-nav">
+  <span class="brand">Sentiment Search</span>
+  <a href="index.html">index</a> <span class="sep">·</span>
+  <span class="current">1 · data overview</span> <span class="sep">·</span>
+  <a href="2_open_router_probing_text.html">2 · OR text</a> <span class="sep">·</span>
+  <a href="3_open_router_probing_audio.html">3 · OR audio</a> <span class="sep">·</span>
+  <a href="4_local_text_probing_finetuning.html">4 · local text</a> <span class="sep">·</span>
+  <a href="5_local_audio_probing_finetuning.html">5 · local audio</a> <span class="sep">·</span>
+  <a href="6_sentiment_signal_in_duration.html">6 · duration</a>
+</nav>
+
+<h1>Data overview
+  <span class="sub">ROG-Dialog v2, ParlaSpeech-SI, ParlaSent-SL — modality, splits, labels, length and
+  speech-rate distributions. Start here.</span>
+</h1>
+
+<!-- =================================== PROBLEM -->
+<h2>The problem, in short</h2>
+
+<p>Short Slovenian dialogue carries affect, but off-the-shelf parliamentary sentiment models
+fail on it. Parliament text and parliament speech lift their sentiment signal from long,
+prepared utterances. ROG-Dialog v2 flips both axes: clips are short, speakers overlap, and
+the register is colloquial. The goal of this report set is to locate where the sentiment
+signal still survives, and where it does not.</p>
+
+<!-- =================================== DATASETS -->
+<h2>Three corpora in play</h2>
+
+<div class="dataset-grid">
+
+  <div class="dcard">
+    <h3>ROG-Dialog v2 <span class="dtag">dialogue</span></h3>
+    <div class="modality"><span class="m audio">AUDIO</span><span class="m text">TEXT</span></div>
+    <ul>
+      <li class="kv"><b>Total:</b> 13,658 usable instances</li>
+      <li class="kv"><b>Splits:</b> train 10,544 · dev 881 · test 2,233</li>
+      <li class="kv"><b>Audio:</b> manual, 1-ch WAV</li>
+      <li class="kv"><b>Labels (3-cls):</b><br>
+          negative 15.6% · neutral 71.8% · positive 12.6%</li>
+      <li class="kv"><b>Labels (6-cls):</b><br>
+          <span style="font-size:8.3pt">
+          predNeg 5.6 · mixNeg 10.0 · neuNeg 15.6<br>
+          neuPos 56.2 · mixPos 6.0 · predPos 6.6
+          </span></li>
+      <li class="kv"><b>Duration:</b> 0.02 – 12.3 s<br>
+          mean 1.46 · median 1.19</li>
+      <li class="kv"><b>Words:</b> 1 – 30<br>mean 3.8 · median 3</li>
+      <li class="kv"><b>WPS:</b> mean 2.93 · median 2.70<br>(fast conversation)</li>
+    </ul>
+  </div>
+
+  <div class="dcard">
+    <h3>ParlaSpeech-SI <span class="dtag">parliament speech</span></h3>
+    <div class="modality"><span class="m audio">AUDIO</span><span class="m text">TEXT</span></div>
+    <ul>
+      <li class="kv"><b>Total:</b> 918,034 usable instances<br>
+          <em>(filter: 10 – 40 words)</em></li>
+      <li class="kv"><b>Splits:</b> train 734K · dev 92K · test 92K</li>
+      <li class="kv"><b>Audio:</b> auto-aligned from parliament video</li>
+      <li class="kv"><b>Labels (3-cls, auto by ParlaSent):</b><br>
+          negative 35.6% · neutral 52.4% · positive 11.9%</li>
+      <li class="kv"><b>Labels (6-cls, auto):</b><br>
+          <span style="font-size:8.3pt">
+          predNeg 18.7 · mixNeg 16.9 · neuNeg 16.5<br>
+          neuPos 35.9 · mixPos 10.1 · predPos 1.8
+          </span></li>
+      <li class="kv"><b>Duration:</b> 1.15 – 70.6 s<br>mean 10.98 · median 10.23</li>
+      <li class="kv"><b>Words:</b> 10 – 40<br>mean 21.6 · median 20</li>
+      <li class="kv"><b>WPS:</b> mean 2.07 · median 2.01<br>(prepared, slow)</li>
+    </ul>
+  </div>
+
+  <div class="dcard">
+    <h3>ParlaSent-SL <span class="dtag">parliament text</span></h3>
+    <div class="modality"><span class="m off">no audio</span><span class="m text">TEXT</span></div>
+    <ul>
+      <li class="kv"><b>Total:</b> 2,600 usable instances</li>
+      <li class="kv"><b>Splits:</b> train 2,054 · dev 180 · test 366</li>
+      <li class="kv"><b>Audio:</b> none (text-only corpus)</li>
+      <li class="kv"><b>Labels (3-cls, manual):</b><br>
+          negative 38.8% · neutral 54.2% · positive 7.0%</li>
+      <li class="kv"><b>Labels (6-cls, manual):</b><br>
+          <span style="font-size:8.3pt">
+          predNeg 37.2 · mixNeg 1.7 · neuNeg 25.3<br>
+          neuPos 28.8 · mixPos 1.7 · predPos 5.3
+          </span></li>
+      <li class="kv"><b>Duration:</b> —</li>
+      <li class="kv"><b>Words:</b> 5 – 30<br>mean 18.1 · median 18</li>
+      <li class="kv"><b>WPS:</b> —</li>
+    </ul>
+  </div>
+
+</div>
+
+<!-- =================================== HISTOGRAMS -->
+<h2>ROG-Dialog v2 at a glance</h2>
+
+<img src="img/ROG-dia-v2_histograms.png" alt="ROG-Dialog v2 histograms"
+     class="figure">
+<figcaption>Duration (s), word count, and WPS over all 13,658 usable ROG-Dialog v2 instances.
+The 2 s dashed line marks the duration floor we have used so far; it drops roughly 76 % of
+the corpus, so most ROG conversation lives below it.</figcaption>
+
+<!-- =================================== ENGINE EXPLAINER -->
+<h2>How the matrix reads from these corpora</h2>
+
+<details open>
+  <summary>Engine — what the matrix is, how the duration study reads it</summary>
+  <div class="body">
+    <ul>
+      <li><strong>The fine-tune matrix.</strong> 3 XLM-R backbones × 7 training-data mixtures = 21
+          regression models. Each is trained once with the ParlaSent recipe (lr 8e-6, batch 32,
+          4 epochs, MSE on z-scored labels). Mixtures are <code>S</code> (ParlaSent-SL),
+          <code>P</code> (ParlaSpeech-SI transcripts), <code>R</code> (ROG-Dialog v2 transcripts),
+          their pairs and the triple <code>SPR</code>.</li>
+      <li><strong>What each model produces.</strong> Each cell is evaluated on all three held-out test
+          sets. It writes one row per test instance
+          <code>{instance_id, text, gold_scalar, pred_scalar, gold_6cls, pred_6cls, gold_3cls, pred_3cls}</code>
+          to <code>predictions_&lt;source&gt;.jsonl</code>. 63 prediction files total, one matrix run,
+          no model weights kept.</li>
+      <li><strong>The duration / WPS analysis.</strong> All duration plots read-and-aggregate those
+          63 files. For each test row the script joins to the source JSONL on
+          <code>instance_id</code>, pulls duration (s) and word count, computes
+          <code>WPS = words / duration</code>, then bins and scores. Nothing is retrained.</li>
+      <li><strong>Binning.</strong> Quantile (equal-count) bins over each test source's own
+          distribution. The envelope line per backbone is the <em>best-mixture</em> value at
+          each bin. Self-labelled cells (xlm-r-parlasent × any mixture containing
+          <code>P</code>, because ParlaSpeech sentiment was auto-generated by ParlaSent itself)
+          are excluded — those measure self-consistency, not transfer.</li>
+      <li><strong>Where to look.</strong> Pipeline code is in <code>scripts/6_sent_duration/</code>.
+          Artefacts land under <code>misc/run_results/finetune_20261113_162724/sent_duration/</code>.
+          Regenerate the raw numbers with
+          <code>python3 scripts/6_sent_duration/04_dataset_stats.py</code>.</li>
+    </ul>
+  </div>
+</details>
+
+<footer>
+Dataset stats regen: <code>scripts/6_sent_duration/04_dataset_stats.py</code> →
+<code>misc/dataset_stats.{md,json}</code>. Histogram PNG rebuilt from
+<code>scripts/6_sent_duration/06_rog_dia_explorer.ipynb</code>.
+</footer>
+
+</body>
+</html>

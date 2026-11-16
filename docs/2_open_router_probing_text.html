@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>2 · OpenRouter — text probing</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<nav class="report-nav">
+  <span class="brand">Sentiment Search</span>
+  <a href="index.html">index</a> <span class="sep">·</span>
+  <a href="1_rog_dia_v2_data_overview.html">1 · data overview</a> <span class="sep">·</span>
+  <span class="current">2 · OR text</span> <span class="sep">·</span>
+  <a href="3_open_router_probing_audio.html">3 · OR audio</a> <span class="sep">·</span>
+  <a href="4_local_text_probing_finetuning.html">4 · local text</a> <span class="sep">·</span>
+  <a href="5_local_audio_probing_finetuning.html">5 · local audio</a> <span class="sep">·</span>
+  <a href="6_sentiment_signal_in_duration.html">6 · duration</a>
+</nav>
+
+<h1>OpenRouter — text probing
+  <span class="sub">Gemini Flash and Claude Haiku on ROG transcripts, zero-shot and 18-exemplar few-shot,
+  3-class and 6-class. 170-instance speaker-disjoint eval subset.</span>
+</h1>
+
+<p class="finding">
+<strong>Gemini Flash</strong> and <strong>Claude Haiku</strong>, zero-shot and 18-exemplar few-shot.
+Few-shot helps text everywhere. Best: Flash few-shot at <strong>F1 0.607</strong> (3-class).
+Haiku is ~13× cheaper for a 0.07 F1 penalty.
+</p>
+
+<table>
+  <thead>
+    <tr><th class="l">model</th><th>shot</th><th>3-cls F1</th><th>6-cls F1</th><th>3-cls ρ</th><th>6-cls ρ</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="l model">Gemini Flash 3.8</td><td>few-shot</td><td class="win">0.607</td><td class="win">0.411</td><td class="good">0.503</td><td class="good">0.568</td></tr>
+    <tr><td class="l model">Gemini Flash 3.8</td><td>0-shot</td><td class="good">0.592</td><td class="mid">0.349</td><td class="mid">0.481</td><td class="good">0.596</td></tr>
+    <tr><td class="l model">Claude Haiku 4.5</td><td>few-shot</td><td class="good">0.534</td><td class="mid">0.337</td><td class="mid">0.420</td><td class="mid">0.448</td></tr>
+    <tr><td class="l model">Claude Haiku 4.5</td><td>0-shot</td><td class="mid">0.467</td><td class="meh">0.213</td><td class="meh">0.334</td><td class="meh">0.341</td></tr>
+    <tr class="baseline"><td class="l">random (uniform)</td><td>baseline</td><td>0.350</td><td>0.183</td><td>+0.101</td><td>−0.044</td></tr>
+    <tr class="baseline"><td class="l">majority-class</td><td>baseline</td><td>0.170</td><td>0.049</td><td>0.000</td><td>0.000</td></tr>
+  </tbody>
+</table>
+<p style="font-size:8.4pt; color:#666; margin-top:0;"><em>Baselines on the same 170-instance eval set.
+Subset is class-balanced by construction (29 per 6-class) so majority-class is a weak baseline here —
+random uniform is the honest floor to beat. Full numbers: <code>runs/baselines/baselines_subset170.md</code>.</em></p>
+
+<p class="hedge">
+On the chopping board: when the full-ROG matrix (Report 4) completes, this page will be
+re-run with the broader eval subset so the OR numbers line up with the new matrix numbers.
+</p>
+
+<details>
+  <summary>Caveats + extras</summary>
+  <div class="body">
+    <ul>
+      <li>Flash &gt; Haiku cleanly on every scheme, both shot modes.</li>
+      <li>Few-shot gain: Flash +0.015 (3-cls) / +0.062 (6-cls); Haiku +0.067 / +0.124.</li>
+      <li>Total API cost for all 8 configs × 170 instances: ~$0.68 (list).</li>
+      <li>Early collapse of Flash-fshot-3cls (F1 0.21) was fixed by raising <code>max_tokens</code> 50 → 500 so the model's mandatory reasoning had room.</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Prompt (verbatim) — recreate this run</summary>
+  <div class="body">
+<p style="margin:0 0 2mm 0">Same prompt for both models; only the label list changes between <code>6cls</code> and <code>3cls</code>.
+Few-shot prepends <strong>18 fixed exemplars</strong> (3 per 6-class, drawn from train, speaker-disjoint from eval)
+as alternating <code>user</code>/<code>assistant</code> turns; 3-class runs relabel the same exemplars to the collapsed label.
+Request body includes <code>"usage":{"include":true}</code> so OpenRouter returns populated cost.
+Source: <code>scripts/2_probe_text/02_run_openrouter_text.py</code>.</p>
+
+<p style="margin:3mm 0 1mm 0"><strong>System message (6-class)</strong></p>
+<pre style="font-size:8.6pt; background:#f6f6f6; padding:2mm; border:1px solid #ddd; white-space:pre-wrap">You classify Slovenian spoken-dialogue utterances by sentiment.
+Choose exactly one label from this list:
+- predominantlyNegative
+- mixedNegative
+- neutralNegative
+- neutralPositive
+- mixedPositive
+- predominantlyPositive
+
+Reply with only the label. No explanation.</pre>
+
+<p style="margin:3mm 0 1mm 0"><strong>System message (3-class)</strong> — same wording, label list becomes
+<code>- negative / - neutral / - positive</code>.</p>
+
+<p style="margin:3mm 0 1mm 0"><strong>User turn (target and each few-shot exemplar)</strong></p>
+<pre style="font-size:8.6pt; background:#f6f6f6; padding:2mm; border:1px solid #ddd; white-space:pre-wrap">Utterance: {text}</pre>
+
+<p style="margin:3mm 0 1mm 0"><strong>Few-shot layout</strong></p>
+<pre style="font-size:8.6pt; background:#f6f6f6; padding:2mm; border:1px solid #ddd; white-space:pre-wrap">system   : &lt;system prompt&gt;
+user     : Utterance: {exemplar_1_text}
+assistant: {exemplar_1_label}
+user     : Utterance: {exemplar_2_text}
+assistant: {exemplar_2_label}
+...  (18 exemplars total in 6-cls; the same texts, collapsed labels in 3-cls)
+user     : Utterance: {target_text}</pre>
+  </div>
+</details>
+
+<footer>
+Full batch: <code>runs/batch_FULL_20261111_115520/</code> · rerun script:
+<code>scripts/2_probe_text/02_run_openrouter_text.py</code> · analyzer:
+<code>scripts/analyze_probe.py</code>
+</footer>
+
+</body>
+</html>

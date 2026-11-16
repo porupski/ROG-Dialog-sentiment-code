@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>4 · Local — text fine-tuning</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<nav class="report-nav">
+  <span class="brand">Sentiment Search</span>
+  <a href="index.html">index</a> <span class="sep">·</span>
+  <a href="1_rog_dia_v2_data_overview.html">1 · data overview</a> <span class="sep">·</span>
+  <a href="2_open_router_probing_text.html">2 · OR text</a> <span class="sep">·</span>
+  <a href="3_open_router_probing_audio.html">3 · OR audio</a> <span class="sep">·</span>
+  <span class="current">4 · local text</span> <span class="sep">·</span>
+  <a href="5_local_audio_probing_finetuning.html">5 · local audio</a> <span class="sep">·</span>
+  <a href="6_sentiment_signal_in_duration.html">6 · duration</a>
+</nav>
+
+<h1>Local — text fine-tuning
+  <span class="sub">3 XLM-R backbones × 7 training-data mixtures = 21 regression cells, each
+  evaluated on three held-out test sets. Numbers on this page are the current (2 s-filtered) matrix.</span>
+</h1>
+
+<p class="finding">
+Three XLM-R backbones × seven data mixtures (parliament text, parliament speech transcripts, dialogue).
+<strong>Pure parliament → dialogue transfer is broken.</strong>
+<strong>ROG alone is too small</strong> — plain backbones collapse to "neutral".
+<strong>Mixing all three sources (SPR) is the only path</strong> that holds positive R² on dialogue.
+</p>
+
+<table>
+  <thead>
+    <tr><th class="l">backbone</th><th>mixture</th><th>3-cls F1</th><th>6-cls F1</th><th>R²</th><th>note</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="l model">XLM-R-large</td><td>R-only</td><td class="bad">0.271</td><td class="bad">0.125</td><td class="bad">−0.030</td><td><span class="flag">collapse → neutral</span></td></tr>
+    <tr><td class="l model">XLM-R-parla</td><td>R-only</td><td class="bad">0.271</td><td class="bad">0.125</td><td class="bad">−0.028</td><td><span class="flag">collapse → neutral</span></td></tr>
+    <tr><td class="l model">XLM-R-parlasent</td><td>R-only</td><td class="win">0.572</td><td class="good">0.286</td><td class="mid">+0.200</td><td>head rescues</td></tr>
+    <tr><td class="l model">XLM-R-large</td><td>SPR</td><td class="good">0.566</td><td class="meh">0.274</td><td class="good">+0.202</td><td>clean</td></tr>
+    <tr><td class="l model">XLM-R-parla</td><td>SPR</td><td class="good">0.554</td><td class="win">0.298</td><td class="mid">+0.172</td><td>6-cls peak (clean)</td></tr>
+    <tr class="warn"><td class="l model">XLM-R-parlasent</td><td>SPR</td><td class="good">0.549</td><td class="meh">0.268</td><td class="win">+0.216</td><td>⚠ self-labelled on P</td></tr>
+    <tr class="baseline"><td class="l">random (uniform)</td><td>baseline</td><td>0.260</td><td>0.118</td><td>−2.371</td><td>natural prior</td></tr>
+    <tr class="baseline"><td class="l">majority-class (neutralPositive)</td><td>baseline</td><td>0.271</td><td>0.125</td><td>−0.024</td><td>72% neutral on ROG</td></tr>
+    <tr class="ceiling"><td class="l">IAA ceiling (annotator ↔ curator)</td><td>ceiling</td><td>0.699</td><td>0.625</td><td>+0.511</td><td>human noise floor</td></tr>
+  </tbody>
+</table>
+<p style="font-size:8.4pt; color:#666; margin-top:0;"><em>Baselines + ceiling on the matrix's ROG test split (n=434, 2 s filter).
+<b>Majority-class</b> matches R-only cells on F1 — the plain-backbone collapse to "neutral" is literally what the majority
+baseline predicts. <b>SPR</b> beats majority by +0.28 F1_3; that's the real training gain. <b>IAA ceiling</b> uses
+<code>labels.sentiment_annotated</code> (the raw annotator) as "pred" and <code>labels.sentiment</code> (the curator)
+as "gold" — 77.3 % of rows agree, so F1_3 ≈ 0.70 is the realistic upper bound for any model on this gold.
+Current SPR sits at ~0.55 F1_3, so ~0.15 of real headroom remains before we would be overfitting curator noise.
+Full numbers: <code>runs/baselines/baselines_rog_test_2s.md</code> · ceiling detail:
+<code>runs/baselines/ceiling_iaa_rog.md</code>.</em></p>
+
+<div class="deliverable">
+  <strong>Deliverable is a transformer speech-sentiment model, not an API pipeline.</strong>
+  Live recipe: <strong>XLM-R-ParlaSent × SPR mixture</strong>, text modality.
+  Full-ROG rerun in progress — this table will be refreshed with the winner (filtered vs full)
+  per <code>scripts/6_sent_duration/08_compare_2s_vs_full.py</code> once that batch lands.
+</div>
+
+<details>
+  <summary>Caveats + extras</summary>
+  <div class="body">
+    <ul>
+      <li>Parliament-only training evaluated on dialogue: R² between <strong>−0.59 and −1.25</strong> (worse than predicting the mean).</li>
+      <li>Transfer gap (parliament R² − dialogue R² on S-only): large <strong>+1.28</strong>, parla <strong>+1.79</strong> (worst), parlasent <strong>+1.08</strong> (smallest). The sentiment head carries the domain-robust signal.</li>
+      <li>Only two mixtures shown in the table — R-only and SPR. The other five (S, P, SP, SR, PR) sit between.</li>
+      <li>⚠ on XLM-R-parlasent × SPR: the ParlaSpeech labels in the training mix were generated by ParlaSent itself, so that cell partially measures self-consistency, not transfer.</li>
+    </ul>
+  </div>
+</details>
+
+<footer>
+Matrix run: <code>misc/run_results/finetune_20261113_162724/</code> · rerun script:
+<code>scripts/4_finetune_text/run_matrix.py</code> · full-ROG launch:
+<code>run_matrix.py --mixtures R_full SR_full PR_full SPR_full --use_gpu</code>
+</footer>
+
+</body>
+</html>

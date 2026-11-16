@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>3 · OpenRouter — audio probing</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<nav class="report-nav">
+  <span class="brand">Sentiment Search</span>
+  <a href="index.html">index</a> <span class="sep">·</span>
+  <a href="1_rog_dia_v2_data_overview.html">1 · data overview</a> <span class="sep">·</span>
+  <a href="2_open_router_probing_text.html">2 · OR text</a> <span class="sep">·</span>
+  <span class="current">3 · OR audio</span> <span class="sep">·</span>
+  <a href="4_local_text_probing_finetuning.html">4 · local text</a> <span class="sep">·</span>
+  <a href="5_local_audio_probing_finetuning.html">5 · local audio</a> <span class="sep">·</span>
+  <a href="6_sentiment_signal_in_duration.html">6 · duration</a>
+</nav>
+
+<h1>OpenRouter — audio probing
+  <span class="sub">Gemini Flash and Gemini Carbon on raw ROG audio. Same 170-instance eval set as Report 2.
+  Shelved — not the deliverable path.</span>
+</h1>
+
+<p class="finding">
+<strong>Gemini Flash</strong> and <strong>Gemini Carbon</strong> on ROG audio. Flash 0-shot hits <strong>F1 0.581</strong> on 3-class
+— within 0.03 of the text ceiling. <strong>Few-shot destroys audio</strong>: Flash's own
+judgements sign-flip (Krippendorff α = −0.10 shot-flip, 6-class).
+</p>
+
+<table>
+  <thead>
+    <tr><th class="l">model</th><th>shot</th><th>3-cls F1</th><th>6-cls F1</th><th>3-cls ρ</th><th>6-cls ρ</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="l model">Gemini Flash 3.8</td><td>0-shot</td><td class="win">0.581</td><td class="meh">0.236</td><td class="good">0.495</td><td class="mid">0.430</td></tr>
+    <tr><td class="l model">Gemini Carbon 4</td><td>0-shot</td><td class="good">0.523</td><td class="good">0.290</td><td class="mid">0.385</td><td class="good">0.488</td></tr>
+    <tr><td class="l model">Gemini Carbon 4</td><td>few-shot</td><td class="mid">0.491</td><td class="good">0.290</td><td class="meh">0.255</td><td class="mid">0.389</td></tr>
+    <tr><td class="l model">Gemini Flash 3.8</td><td>few-shot</td><td class="meh">0.413</td><td class="bad">0.171</td><td class="bad">0.140</td><td class="bad">0.052</td></tr>
+    <tr class="baseline"><td class="l">random (uniform)</td><td>baseline</td><td>0.350</td><td>0.183</td><td>+0.101</td><td>−0.044</td></tr>
+    <tr class="baseline"><td class="l">majority-class</td><td>baseline</td><td>0.170</td><td>0.049</td><td>0.000</td><td>0.000</td></tr>
+  </tbody>
+</table>
+<p style="font-size:8.4pt; color:#666; margin-top:0;"><em>Same 170-instance eval set as Report 2; baselines identical.
+Audio Flash 0-shot beats random by +0.23 F1_3. Full numbers: <code>runs/baselines/baselines_subset170.md</code>.</em></p>
+
+<p class="hedge">
+Shelved. Audio does not currently beat text on 6-class; few-shot is actively harmful.
+Kept as a published number, not as the forward path.
+</p>
+
+<details>
+  <summary>Caveats + extras</summary>
+  <div class="body">
+    <ul>
+      <li>6-cls audio ceiling is Carbon-0-shot at <strong>0.290</strong> — half a class-label off, on average.</li>
+      <li>Carbon shot-flip α = +0.61 — only audio model that doesn't collapse under few-shot, but still loses F1.</li>
+      <li>Both runs were on <strong>50%-off promo pricing</strong>; list price would double (~$2.47 → ~$4.93 at this batch size).</li>
+      <li>Recommendation: ship audio <strong>zero-shot only</strong> for now. Re-encode exemplars as audio+verbal-label pairs before retrying few-shot.</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Prompt (verbatim) — recreate this run</summary>
+  <div class="body">
+<p style="margin:0 0 2mm 0">Audio is sent inline as base-64 WAV via OpenRouter's multimodal <code>input_audio</code> content-part;
+OR routes this to the provider-native audio part (Gemini accepts it directly). Few-shot prepends
+exemplars as <code>(audio, label)</code> pairs — the exemplar text is NOT shown, only the audio and the
+gold label. Source: <code>scripts/3_probe_audio/05_run_openrouter_audio.py</code>.</p>
+
+<p style="margin:3mm 0 1mm 0"><strong>System message (6-class)</strong></p>
+<pre style="font-size:8.6pt; background:#f6f6f6; padding:2mm; border:1px solid #ddd; white-space:pre-wrap">You classify Slovenian spoken-dialogue utterances by sentiment. You will receive an audio clip of a short utterance. Listen to the audio (tone, prosody, emphasis, and the words themselves) and choose exactly one label from this list:
+- predominantlyNegative
+- mixedNegative
+- neutralNegative
+- neutralPositive
+- mixedPositive
+- predominantlyPositive
+
+Reply with only the label. No explanation.</pre>
+
+<p style="margin:3mm 0 1mm 0"><strong>System message (3-class)</strong> — same wording, label list becomes
+<code>- negative / - neutral / - positive</code>.</p>
+
+<p style="margin:3mm 0 1mm 0"><strong>User turn (multimodal content array, per target and each few-shot exemplar)</strong></p>
+<pre style="font-size:8.6pt; background:#f6f6f6; padding:2mm; border:1px solid #ddd; white-space:pre-wrap">[
+  {"type": "text", "text": "Utterance:"},
+  {"type": "input_audio",
+   "input_audio": {"format": "wav", "data": "&lt;base64 WAV bytes&gt;"}}
+]</pre>
+
+<p style="margin:3mm 0 1mm 0"><strong>Few-shot layout</strong></p>
+<pre style="font-size:8.6pt; background:#f6f6f6; padding:2mm; border:1px solid #ddd; white-space:pre-wrap">system   : &lt;system prompt&gt;
+user     : [Utterance: + audio of exemplar 1]
+assistant: {exemplar_1_label}
+user     : [Utterance: + audio of exemplar 2]
+assistant: {exemplar_2_label}
+...  (same 18 exemplars as the text prompt, but audio-only)
+user     : [Utterance: + audio of target]</pre>
+  </div>
+</details>
+
+<footer>
+Rerun script: <code>scripts/3_probe_audio/05_run_openrouter_audio.py</code> · subset:
+<code>data/subset_174_seed42_v2.jsonl</code> · few-shot pool:
+<code>data/fewshot_pool_18_seed42_v2.jsonl</code>
+</footer>
+
+</body>
+</html>

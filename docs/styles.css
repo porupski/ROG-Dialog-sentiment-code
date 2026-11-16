@@ -1,0 +1,195 @@
+/* Shared style for the Sentiment-Search docs set.
+   One sheet covers index.html plus the numbered report pages. */
+
+@page { size: A4 portrait; margin: 14mm; }
+
+html, body {
+    font-family: "Inter", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    color: #1b1b1b; background: #fff;
+}
+body {
+    max-width: 182mm; margin: 0 auto; padding: 0 6mm;
+    font-size: 10.2pt; line-height: 1.45;
+}
+
+h1 { font-size: 15pt; margin: 0 0 1mm 0; font-weight: 650; }
+h1 .sub {
+    display: block; font-weight: 400; color: #666; font-size: 9.8pt;
+    margin-top: 1mm;
+}
+h2 {
+    font-size: 11.2pt; margin: 5mm 0 1.5mm 0;
+    padding-bottom: 0.8mm; border-bottom: 1px solid #ddd; font-weight: 600;
+}
+h3 { font-size: 10.4pt; margin: 3mm 0 1mm 0; font-weight: 600; }
+
+p { margin: 1.5mm 0; }
+.finding { font-size: 10.4pt; margin-bottom: 1.5mm; }
+.finding strong { color: #111; }
+
+/* Report-set nav bar (top of every split report, plus index) */
+.report-nav {
+    display: flex; flex-wrap: wrap; gap: 0.8mm 2.4mm;
+    font-size: 9pt; color: #555;
+    padding: 1.6mm 0 2mm 0; border-bottom: 1px solid #eee;
+    margin-bottom: 3mm;
+}
+.report-nav a { color: #2a6bd0; text-decoration: none; }
+.report-nav a:hover { text-decoration: underline; }
+.report-nav .current { color: #111; font-weight: 600; }
+.report-nav .brand { font-weight: 700; color: #111; margin-right: 1mm; }
+.report-nav .sep { color: #bbb; }
+
+/* Tables — visible + pretty. */
+table {
+    border-collapse: separate; border-spacing: 0;
+    width: 100%; font-size: 8.8pt; margin: 1.5mm 0 2mm 0;
+    border-radius: 1.5mm; overflow: hidden;
+    box-shadow: 0 0.3mm 1.2mm rgba(0,0,0,0.08);
+}
+thead th {
+    background: #2b3645; color: #fff; font-weight: 600;
+    padding: 1.6mm 1.6mm; text-align: center;
+    border: none; font-size: 8.6pt;
+    letter-spacing: 0.02em;
+}
+thead th.l { text-align: left; }
+tbody td {
+    padding: 1.3mm 1.6mm; text-align: center;
+    border-bottom: 1px solid #ececec;
+    border-right: 1px solid #ececec;
+}
+tbody tr:last-child td { border-bottom: none; }
+tbody td:last-child { border-right: none; }
+td.l { text-align: left; }
+td.model { font-weight: 500; }
+
+/* Heatmap cell colours (background intensity reflects F1). */
+.win  { background: #74c69d; font-weight: 700; color: #0a2e1c; }
+.good { background: #b7e4c7; }
+.mid  { background: #ffe066; }
+.meh  { background: #ffb37a; }
+.bad  { background: #ff8f8f; }
+.warn { background: #ffe5d9; }
+.flag { color: #a80000; font-weight: 600; }
+tr.baseline td { background: #f4f4f4; color: #555; font-style: italic; }
+tr.baseline td.l { color: #333; }
+tr.ceiling td { background: #e9f1fc; color: #194a28; font-weight: 600; }
+tr.ceiling td.l { color: #111; }
+
+details { margin: 1mm 0 2mm 0; padding: 0; }
+details summary {
+    cursor: pointer; color: #555; font-size: 9pt;
+    padding: 0.6mm 0; user-select: none; list-style: none;
+}
+details summary::before { content: "▸ "; color: #888; }
+details[open] summary::before { content: "▾ "; color: #888; }
+details > div.body {
+    padding: 1.5mm 0 1mm 4mm; border-left: 2px solid #eee;
+    margin-left: 1mm; font-size: 9.3pt; line-height: 1.4;
+}
+ul { margin: 1.5mm 0; padding-left: 5.5mm; }
+li { margin: 1.2mm 0; }
+li strong { color: #111; }
+
+/* Dataset cards — three side by side. */
+.dataset-grid {
+    display: grid; grid-template-columns: 1fr 1fr 1fr;
+    gap: 3mm; margin: 2mm 0 3mm 0;
+}
+.dcard {
+    border: 1px solid #d5d5d5; border-radius: 1.5mm;
+    padding: 2.5mm 3mm; font-size: 8.8pt; line-height: 1.4;
+    background: #fafafa;
+}
+.dcard h3 {
+    font-size: 9.6pt; margin: 0 0 1.5mm 0; font-weight: 600;
+    color: #1b1b1b; padding-bottom: 1mm;
+    border-bottom: 1px solid #ddd;
+}
+.dcard h3 .dtag {
+    display: inline-block; font-size: 7.6pt; font-weight: 500;
+    color: #555; background: #e5e5e5; padding: 0.2mm 1.4mm;
+    border-radius: 1mm; margin-left: 1.2mm; vertical-align: middle;
+}
+/* Modality chips — AUDIO + TEXT banner on each dataset card. */
+.modality {
+    display: inline-flex; gap: 1mm; margin-bottom: 1.5mm;
+}
+.modality .m {
+    font-size: 7.6pt; font-weight: 700; letter-spacing: 0.04em;
+    padding: 0.4mm 1.6mm; border-radius: 1mm;
+    color: #fff;
+}
+.modality .m.audio { background: #c86b2a; }
+.modality .m.text  { background: #3a7bbd; }
+.modality .m.off   { background: #ccc; color: #666; }
+
+.dcard ul { margin: 0; padding-left: 4mm; }
+.dcard li { margin: 0.9mm 0; }
+.dcard .kv { color: #555; font-size: 8.4pt; }
+.dcard .kv b { color: #1b1b1b; font-weight: 600; }
+
+.deliverable {
+    background: #e9f1fc; border-left: 3px solid #2a6bd0;
+    padding: 2.2mm 3mm; margin: 2mm 0 2mm 0; font-size: 10.2pt;
+    border-radius: 1mm;
+}
+.hedge {
+    background: #fff8e8; border-left: 3px solid #d08b1a;
+    padding: 2.2mm 3mm; margin: 1.5mm 0; font-size: 9.8pt;
+    border-radius: 1mm;
+}
+.conclusion {
+    background: #eef7ec; border-left: 3px solid #2e8b4d;
+    padding: 2.4mm 3mm; margin: 2mm 0 2mm 0; font-size: 10.2pt;
+    border-radius: 1mm;
+}
+.conclusion strong { color: #194a28; }
+.placeholder {
+    background: #f6f6f6; border: 1px dashed #bbb;
+    padding: 4mm 5mm; margin: 2mm 0; border-radius: 2mm;
+    color: #555; font-size: 10pt;
+}
+.placeholder strong { color: #111; }
+footer { margin-top: 4mm; color: #777; font-size: 8.4pt; padding-bottom: 6mm; }
+code {
+    font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+    background: #f2f2f2; padding: 0 1mm; font-size: 9pt; border-radius: 0.5mm;
+}
+
+/* Index page — report cards. */
+.report-list {
+    display: grid; grid-template-columns: 1fr; gap: 2mm;
+    margin: 3mm 0;
+}
+.report-list a.r-card {
+    display: block; padding: 2.5mm 3mm;
+    border: 1px solid #ddd; border-radius: 1.5mm;
+    background: #fafafa; text-decoration: none; color: inherit;
+}
+.report-list a.r-card:hover { background: #f1f5fa; border-color: #2a6bd0; }
+.report-list .r-num {
+    display: inline-block; width: 6mm; font-weight: 700; color: #2a6bd0;
+}
+.report-list .r-title { font-weight: 600; color: #111; }
+.report-list .r-gloss { color: #555; font-size: 9pt; margin-top: 0.5mm; }
+.report-list .r-tag {
+    display: inline-block; font-size: 7.6pt; font-weight: 600;
+    padding: 0.2mm 1.4mm; border-radius: 1mm; margin-left: 1.5mm;
+    vertical-align: middle; letter-spacing: 0.04em;
+}
+.r-tag.active   { background: #d4edda; color: #155724; }
+.r-tag.chopblock{ background: #fff3cd; color: #856404; }
+.r-tag.shelved  { background: #e2e3e5; color: #495057; }
+.r-tag.placeholder { background: #f0e6fa; color: #553c70; }
+
+img.figure {
+    display: block; max-width: 100%; height: auto;
+    margin: 2mm auto 1mm auto;
+    border: 1px solid #eee; border-radius: 1.5mm;
+}
+figcaption {
+    text-align: center; color: #666; font-size: 8.6pt;
+    margin: 0 0 2mm 0;
+}
