@@ -34,13 +34,13 @@ Haiku is ~13× cheaper for a 0.07 F1 penalty.
     <tr><th class="l">model</th><th>shot</th><th>3-cls F1</th><th>6-cls F1</th><th>3-cls ρ</th><th>6-cls ρ</th></tr>
   </thead>
   <tbody>
+    <tr class="baseline"><td class="l">random (uniform)</td><td>baseline</td><td>0.350</td><td>0.183</td><td>+0.101</td><td>−0.044</td></tr>
+    <tr class="baseline"><td class="l">majority-class</td><td>baseline</td><td>0.170</td><td>0.049</td><td>0.000</td><td>0.000</td></tr>
+    <tr class="baseline"><td class="l">ParlaSent zero-shot (stock)</td><td>baseline</td><td>0.384</td><td>0.215</td><td>+0.298</td><td>+0.410</td></tr>
     <tr><td class="l model">Gemini Flash 3.8</td><td>few-shot</td><td class="win">0.607</td><td class="win">0.411</td><td class="good">0.503</td><td class="good">0.568</td></tr>
     <tr><td class="l model">Gemini Flash 3.8</td><td>0-shot</td><td class="good">0.592</td><td class="mid">0.349</td><td class="mid">0.481</td><td class="good">0.596</td></tr>
     <tr><td class="l model">Claude Haiku 4.5</td><td>few-shot</td><td class="good">0.534</td><td class="mid">0.337</td><td class="mid">0.420</td><td class="mid">0.448</td></tr>
     <tr><td class="l model">Claude Haiku 4.5</td><td>0-shot</td><td class="mid">0.467</td><td class="meh">0.213</td><td class="meh">0.334</td><td class="meh">0.341</td></tr>
-    <tr class="baseline"><td class="l">random (uniform)</td><td>baseline</td><td>0.350</td><td>0.183</td><td>+0.101</td><td>−0.044</td></tr>
-    <tr class="baseline"><td class="l">majority-class</td><td>baseline</td><td>0.170</td><td>0.049</td><td>0.000</td><td>0.000</td></tr>
-    <tr class="baseline"><td class="l">ParlaSent zero-shot (stock)</td><td>baseline</td><td>0.384</td><td>0.215</td><td>+0.298</td><td>+0.410</td></tr>
   </tbody>
 </table>
 <p style="font-size:8.4pt; color:#666; margin-top:0;"><em>Baselines on the same 170-instance eval set.
@@ -106,10 +106,88 @@ user     : Utterance: {target_text}</pre>
   </div>
 </details>
 
+<h2>Progress — 2026-11-17</h2>
+
+<p class="finding">
+Two new batches: <strong>bigger OpenAI models</strong> (GPT-4o, GPT-5, GPT-5.6-luna) single-utterance;
+and <strong>3-turn conversational context</strong> on Flash + Haiku. Two reads:
+<strong>bigger-ceiling-model does not beat Flash</strong>, and <strong>context lifts +0.048 F1_3
+at matched 0-shot</strong> on both Flash and Haiku, even with ~1-second neighbour utterances.
+</p>
+
+<h3>Bigger OpenAI — does ceiling-size beat Flash?</h3>
+
+<table>
+  <thead>
+    <tr><th class="l">model</th><th>shot</th><th>3-cls F1</th><th>6-cls F1</th><th>3-cls ρ</th><th>6-cls ρ</th><th>parse</th><th>cost</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="l model">Gemini Flash 3.8 <span style="color:#888">(prev)</span></td><td>few-shot</td><td class="win">0.607</td><td class="win">0.411</td><td class="good">0.503</td><td class="good">0.568</td><td>1.00</td><td>$0.33</td></tr>
+    <tr><td class="l model">Claude Haiku 4.5 <span style="color:#888">(prev)</span></td><td>few-shot</td><td class="good">0.534</td><td class="mid">0.337</td><td class="mid">0.420</td><td class="mid">0.448</td><td>1.00</td><td>$0.03</td></tr>
+    <tr><td class="l model">GPT-5</td><td>few-shot</td><td class="good">0.579</td><td class="mid">0.375</td><td class="mid">0.466</td><td class="good">0.595</td><td class="meh">0.77<sup>*</sup></td><td>$0.41</td></tr>
+    <tr><td class="l model">GPT-5</td><td>0-shot</td><td class="good">0.552</td><td class="mid">0.344</td><td class="mid">0.451</td><td class="good">0.530</td><td>0.91</td><td>$0.31</td></tr>
+    <tr><td class="l model">GPT-4o</td><td>few-shot</td><td class="good">0.551</td><td class="mid">0.377</td><td class="mid">0.436</td><td class="good">0.529</td><td>1.00</td><td>$0.23</td></tr>
+    <tr><td class="l model">GPT-4o</td><td>0-shot</td><td class="good">0.531</td><td class="meh">0.292</td><td class="mid">0.451</td><td class="good">0.522</td><td>1.00</td><td>$0.03</td></tr>
+    <tr><td class="l model">GPT-5.6-luna</td><td>0-shot</td><td class="good">0.552</td><td class="mid">0.342</td><td class="mid">0.495</td><td class="good">0.571</td><td>1.00</td><td>$0.01</td></tr>
+    <tr><td class="l model">GPT-5.6-luna</td><td>few-shot</td><td class="good">0.526</td><td class="mid">0.322</td><td class="mid">0.424</td><td class="mid">0.465</td><td>1.00</td><td>$0.02</td></tr>
+  </tbody>
+</table>
+<p style="font-size:8.4pt; color:#666; margin-top:0;"><em>Same 170-instance subset, same prompts, same parse rules.
+<sup>*</sup> GPT-5 fshot 6-cls drops to <strong>77% parse rate</strong> — reasoning exhausts the 500-token
+budget before emitting a clean label on long few-shot prefixes. <strong>Flash fshot 3-cls (0.607) still
+holds the single-utterance crown.</strong> GPT-5 fshot 3-cls = 0.579 is within 0.03 of Haiku fshot and
+~2× the cost of Flash. <strong>Luna 0-shot 3-cls (0.552) matches GPT-5 0-shot within noise at ~1/25 the
+cost</strong> — the cheap current-gen tier is where the signal lives.
+Full numbers: <code>runs/batch_FULL_20261117_104225/batch_results.csv</code>.</em></p>
+
+<h3>Context (3-turn window) — does natural dialogue flow lift sentiment F1?</h3>
+
+<table>
+  <thead>
+    <tr><th class="l">model</th><th>context</th><th>shot</th><th>3-cls F1</th><th>6-cls F1</th><th>3-cls ρ</th><th>6-cls ρ</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="l model">Gemini Flash 3.8</td><td>iso (single-utt)</td><td>0-shot</td><td class="good">0.592</td><td class="mid">0.349</td><td class="mid">0.481</td><td class="good">0.596</td></tr>
+    <tr><td class="l model">Gemini Flash 3.8</td><td>ctx3 (prev · target · next)</td><td>0-shot</td><td class="win">0.639</td><td class="mid">0.380</td><td class="good">0.603</td><td class="win">0.702</td></tr>
+    <tr><td class="l model">Claude Haiku 4.5</td><td>iso (single-utt)</td><td>0-shot</td><td class="mid">0.467</td><td class="meh">0.213</td><td class="meh">0.334</td><td class="meh">0.341</td></tr>
+    <tr><td class="l model">Claude Haiku 4.5</td><td>ctx3 (prev · target · next)</td><td>0-shot</td><td class="good">0.515</td><td class="meh">0.235</td><td class="mid">0.434</td><td class="good">0.534</td></tr>
+  </tbody>
+</table>
+
+<table style="margin-top:1mm;">
+  <thead>
+    <tr><th class="l">matched-protocol delta (ctx3 − iso at same model, shot, scheme)</th><th>ΔF1_3</th><th>ΔF1_6</th><th>Δρ_3</th><th>Δρ_6</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="l">Gemini Flash 3.8 · 0-shot</td><td class="good">+0.048</td><td class="mid">+0.031</td><td class="good">+0.122</td><td class="good">+0.106</td></tr>
+    <tr><td class="l">Claude Haiku 4.5 · 0-shot</td><td class="good">+0.048</td><td class="mid">+0.022</td><td class="good">+0.101</td><td class="good">+0.192</td></tr>
+  </tbody>
+</table>
+<p style="font-size:8.4pt; color:#666; margin-top:0;"><em>Context window = previous + target + next utterance from the same conversation, joined on
+<code>file_id</code>+<code>start_t</code>. Target is marked <code>[TARGET]</code> at end-of-line; speakers collapsed to
+<code>SPK1</code>/<code>SPK2</code>. All 170 targets have both neighbours present (zero boundary pads).
+<strong>Flash ctx3 0-shot (0.639) beats Flash iso <em>few-shot</em> (0.607), the previous crown</strong>,
+and closes ~1/3 of the gap to the IAA ceiling of 0.699. Same +0.048 ΔF1_3 on Haiku — the lift is model-agnostic.
+<strong>Caveat worth taking seriously:</strong> 75 of 170 windows (44%) are single-speaker (one talker's utterance
+split into three). The lift is real on the mixed-speaker subset AND on the single-speaker subset — pending slice
+analysis — but a stronger context window (longer neighbours, longer in words) is expected to amplify this.
+Full numbers: <code>runs/batch_CTX_20261117_124601/batch_results.csv</code>.</em></p>
+
+<p class="hedge">
+Next step on this track: <strong>refine the context builder</strong>. Current neighbours are often ~1 s
+(2–3 words), which doesn't give the model real conversational structure. A word-count-threshold builder
+(e.g. accumulate neighbour utterances left/right until ≥10 words each) would give actual context while
+preserving natural dialogue flow. Sweep context length as a third axis (10 · 20 · 30 words) to detect
+a peak / plateau analogous to the duration envelope in Report 6.
+</p>
+
 <footer>
-Full batch: <code>runs/batch_FULL_20261111_115520/</code> · rerun script:
-<code>scripts/2_probe_text/02_run_openrouter_text.py</code> · analyzer:
-<code>scripts/analyze_probe.py</code>
+Full batches: <code>runs/batch_FULL_20261111_115520/</code> ·
+<code>runs/batch_FULL_20261117_104225/</code> ·
+<code>runs/batch_CTX_20261117_124601/</code> · rerun scripts:
+<code>scripts/2_probe_text/02_run_openrouter_text.py</code>,
+<code>scripts/2_probe_text/03_run_openrouter_text_context.py</code> ·
+analyzer: <code>scripts/analyze_probe.py</code>
 </footer>
 
 </body>

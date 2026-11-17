@@ -63,6 +63,66 @@ in <code>runs/</code>; pipeline code is in <code>scripts/</code>.</p>
 
 </div>
 
+<h2>Knobs we turned — did it help find the sentiment signal?</h2>
+
+<p>Each row is a single dial we changed with everything else held fixed, scored by the resulting change
+in macro-F1 on the 3-class task (ΔF1_3) and the % change on top of the "from" condition.
+<span style="color:#2a7a4a">Green</span> = the knob helped;
+<span style="color:#a00">red</span> = it hurt;
+<span style="color:#aa7a00">yellow</span> = flat / within noise.
+Rows use <strong>matched comparison</strong>: same model where applicable, same eval subset,
+same prompt otherwise unchanged. A <sup>†</sup> marks an eval-set swap (fine-tune cells evaluate
+on ROG-test, not on the 170-instance subset).</p>
+
+<h3>TEXT — knobs</h3>
+<table>
+  <thead>
+    <tr><th class="l">knob</th><th class="l">matched comparison</th><th>from</th><th>to</th><th>ΔF1_3</th><th>% of "from"</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="l"><strong>context window</strong></td><td class="l">single-utt → 3-turn ctx, Flash 0-shot</td><td>0.592</td><td>0.639</td><td class="good">+0.048</td><td class="good">+8.1 %</td></tr>
+    <tr><td class="l"><strong>context window</strong></td><td class="l">single-utt → 3-turn ctx, Haiku 0-shot</td><td>0.467</td><td>0.515</td><td class="good">+0.048</td><td class="good">+10.3 %</td></tr>
+    <tr><td class="l"><strong>few-shot (18 ex.)</strong></td><td class="l">0-shot → 18-ex fshot, Haiku 3-cls</td><td>0.467</td><td>0.534</td><td class="good">+0.067</td><td class="good">+14.3 %</td></tr>
+    <tr><td class="l"><strong>few-shot (18 ex.)</strong></td><td class="l">0-shot → 18-ex fshot, Flash 3-cls</td><td>0.592</td><td>0.607</td><td class="mid">+0.015</td><td class="mid">+2.5 %</td></tr>
+    <tr><td class="l"><strong>few-shot (18 ex.)</strong></td><td class="l">0-shot → 18-ex fshot, GPT-5 3-cls</td><td>0.552</td><td>0.579</td><td class="mid">+0.027</td><td class="mid">+4.9 %</td></tr>
+    <tr><td class="l"><strong>few-shot (18 ex.)</strong></td><td class="l">0-shot → 18-ex fshot, Luna 3-cls</td><td>0.552</td><td>0.526</td><td class="meh">−0.025</td><td class="meh">−4.7 %</td></tr>
+    <tr><td class="l"><strong>cheap → frontier LLM</strong></td><td class="l">Flash → GPT-5, fshot 3-cls (same vendor-tier swap)</td><td>0.607</td><td>0.579</td><td class="meh">−0.028</td><td class="meh">−4.6 %</td></tr>
+    <tr><td class="l"><strong>cheap → frontier LLM</strong></td><td class="l">Haiku → GPT-5 (fshot 3-cls, cross-vendor proxy)</td><td>0.534</td><td>0.579</td><td class="mid">+0.045</td><td class="mid">+8.4 %</td></tr>
+    <tr><td class="l"><strong>fine-tune on dialogue</strong><sup>†</sup></td><td class="l">ParlaSent-ZS → XLM-R-parlasent × R, ROG-test</td><td>0.457</td><td>0.572</td><td class="win">+0.115</td><td class="win">+25.2 %</td></tr>
+    <tr><td class="l"><strong>training mixture</strong><sup>†</sup></td><td class="l">R only → SPR, xlm-r-parlasent, ROG-test</td><td>0.572</td><td>0.549</td><td class="meh">−0.023</td><td class="meh">−4.0 %</td></tr>
+    <tr><td class="l"><strong>backbone</strong><sup>†</sup></td><td class="l">XLM-R-large → XLM-R-parlasent on R, ROG-test</td><td>0.271</td><td>0.572</td><td class="win">+0.301</td><td class="win">+111 %</td></tr>
+    <tr><td class="l" style="color:#555;"><em>IAA ceiling (human reference)</em></td><td class="l" style="color:#555;"><em>annotator ↔ curator agreement, ROG-test</em></td><td>—</td><td>0.699</td><td style="color:#555;"><em>ceiling</em></td><td style="color:#555;"><em>—</em></td></tr>
+  </tbody>
+</table>
+
+<h3>AUDIO — knobs</h3>
+<table>
+  <thead>
+    <tr><th class="l">knob</th><th class="l">matched comparison</th><th>from</th><th>to</th><th>ΔF1_3</th><th>% of "from"</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="l"><strong>few-shot (18 ex.)</strong></td><td class="l">0-shot → 18-ex fshot, Flash audio 3-cls</td><td>0.581</td><td>0.413</td><td class="bad">−0.168</td><td class="bad">−28.9 %</td></tr>
+    <tr><td class="l"><strong>few-shot (18 ex.)</strong></td><td class="l">0-shot → 18-ex fshot, Carbon audio 3-cls</td><td>0.523</td><td>0.491</td><td class="meh">−0.032</td><td class="meh">−6.1 %</td></tr>
+    <tr><td class="l"><strong>cheap → frontier LLM</strong></td><td class="l">Flash → Carbon, 0-shot 3-cls (audio)</td><td>0.581</td><td>0.523</td><td class="meh">−0.058</td><td class="meh">−10.0 %</td></tr>
+    <tr><td class="l"><strong>cheap → frontier LLM</strong></td><td class="l">Flash → Carbon, 0-shot 6-cls (audio)</td><td>0.236</td><td>0.290</td><td class="good">+0.054</td><td class="good">+22.9 %</td></tr>
+    <tr><td class="l"><strong>modality</strong></td><td class="l">text → audio, Flash 0-shot 3-cls</td><td>0.592</td><td>0.581</td><td class="mid">−0.011</td><td class="mid">−1.9 %</td></tr>
+    <tr><td class="l"><strong>context window</strong></td><td class="l" style="color:#888;">pending (audio context probe not run)</td><td>—</td><td>—</td><td style="color:#888;">—</td><td style="color:#888;">—</td></tr>
+    <tr><td class="l"><strong>fine-tune on dialogue</strong></td><td class="l" style="color:#888;">pending (Report 5 — placeholder)</td><td>—</td><td>—</td><td style="color:#888;">—</td><td style="color:#888;">—</td></tr>
+    <tr><td class="l" style="color:#555;"><em>IAA ceiling (human reference)</em></td><td class="l" style="color:#555;"><em>same text ceiling applies to audio, same gold</em></td><td>—</td><td>0.699</td><td style="color:#555;"><em>ceiling</em></td><td style="color:#555;"><em>—</em></td></tr>
+  </tbody>
+</table>
+
+<p style="font-size:8.4pt; color:#666;"><em>Why "% of from" and not "% of random floor"? Each row is a
+<strong>paired knob flip</strong> — the question is "did changing this one dial move the signal from where
+it already was?", not "how far is this cell from random guessing?" Using the "from" condition as the
+local baseline keeps each row's story self-contained.
+<sup>†</sup> fine-tune / backbone / mixture rows evaluate on ROG-test (n=434, 2 s-filtered) because
+the fine-tune matrix was not re-run on the 170-subset; everything else is on the 170-subset. Both
+subsets share the same gold-labelling pipeline, so direction of the delta transfers; absolute F1
+cannot be compared across eval sets.
+Audio rows: Flash + Carbon on the 170-subset, shelved after few-shot destroyed the audio prompt.
+"Luna 0-shot" = <code>openai/gpt-5.6-luna</code>; "Carbon" = Gemini Carbon 4 (audio-native frontier tier).</em></p>
+
 <h2>Legacy</h2>
 <p>The original monolith report lives at
 <a href="legacy/report_sentiment_signal_hunt.html">legacy/report_sentiment_signal_hunt.html</a>.

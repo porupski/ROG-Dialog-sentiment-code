@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """Run text-sentiment configs via OpenRouter on the fixed 174-instance subset.
 
-Configs: {haiku, flash, gpt4o, gpt5} x {0shot, fshot} x {6cls, 3cls}, all iso context.
+Configs: {haiku, flash, gpt4o, gpt5, luna} x {0shot, fshot} x {6cls, 3cls}, all iso context.
 Models:
-  anthropic/claude-haiku-5.5
-  google/gemini-3.8-flash
-  openai/gpt-4o-2024-11-20   — pinned snapshot for lit-review comparison. ParlaSpeech 3.0
-      (Ljubešić et al., LREC 2026) reports GPT-4o parliamentary mean Spearman 0.807 vs
-      ParlaSent 0.786 — this is the slug closest to that measurement.
-  openai/gpt-5                — sliding current frontier; included to see whether
-      newer OpenAI models have moved toward or away from Slavic sentiment.
+  anthropic/claude-haiku-5.5   — cheap current-gen Anthropic.
+  google/gemini-3.8-flash      — cheap current-gen Google; tops single-utterance so far.
+  openai/gpt-4o                — expensive sliding OpenAI slug. Was pinned to the 2024-11-20
+      snapshot to match ParlaSpeech 3.0 (Ljubešić et al., LREC 2026; GPT-4o parliamentary
+      mean Spearman 0.807 vs ParlaSent 0.786). Unpinned now — the single-utterance ceiling
+      question matters more than one published literature comparison. Record whatever OR
+      resolves it to in the response for provenance.
+  openai/gpt-5                 — medium-cost current OpenAI frontier.
+  openai/gpt-5.6-luna          — cheap/light/latest OpenAI; direct comparator for Flash
+      and Haiku at the cheap tier.
 
 Prompts are identical across the two models for a given (shot_mode, class_scheme) pair.
 For few-shot, the same 18 fixed examples (3/class from train) are prepended as user/assistant turns;
@@ -55,13 +58,12 @@ OR_URL = "https://openrouter.ai/api/v1/chat/completions"
 MODELS = {
     "haiku": "anthropic/claude-haiku-5.5",
     "flash": "google/gemini-3.8-flash",
-    # openai/gpt-4o on OR is a SLIDING tag — it points to OpenAI's current gpt-4o default,
-    # which drifts as OpenAI promotes new snapshots. Pinning to the 2024-11-20 snapshot so
-    # our number is reproducible against the ParlaSpeech 3.0 audit cited in the lit review.
-    "gpt4o": "openai/gpt-4o-2024-11-20",
-    # Sliding current-frontier OpenAI slug. Expect the resolved snapshot to change over time;
-    # record whatever OR reports in the response headers for provenance.
+    # All three OpenAI slugs below are SLIDING — OR routes to OpenAI's current default for
+    # each tag and the resolved snapshot can drift between runs. Record whatever OR reports
+    # in the response for provenance; don't rely on across-batch reproducibility.
+    "gpt4o": "openai/gpt-4o",
     "gpt5":  "openai/gpt-5",
+    "luna":  "openai/gpt-5.6-luna",
 }
 
 TASKS = [
@@ -82,6 +84,10 @@ TASKS = [
     ("gpt5",  "0shot", "3cls"),
     ("gpt5",  "fshot", "6cls"),
     ("gpt5",  "fshot", "3cls"),
+    ("luna",  "0shot", "6cls"),
+    ("luna",  "0shot", "3cls"),
+    ("luna",  "fshot", "6cls"),
+    ("luna",  "fshot", "3cls"),
 ]
 
 LABELS_6 = [
