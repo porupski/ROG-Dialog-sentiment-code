@@ -19,14 +19,15 @@
 </nav>
 
 <h1>OpenRouter — text probing
-  <span class="sub">Gemini Flash and Claude Haiku on ROG transcripts, zero-shot and 18-exemplar few-shot,
-  3-class and 6-class. 170-instance speaker-disjoint eval subset.</span>
+  <span class="sub">Hunting the Slovenian spoken-dialogue <strong>sentiment signal</strong> through the
+  OpenRouter API. Every table below is one knob flipped; each green box reads whether the knob helped
+  pull the signal out. Fixed 170-instance balanced subset of ROG-Dialog v2.</span>
 </h1>
 
 <p class="finding">
-<strong>Gemini Flash</strong> and <strong>Claude Haiku</strong>, zero-shot and 18-exemplar few-shot.
-Few-shot helps text everywhere. Best: Flash few-shot at <strong>F1 0.607</strong> (3-class).
-Haiku is ~13× cheaper for a 0.07 F1 penalty.
+Phase 1 — <strong>Gemini Flash</strong> and <strong>Claude Haiku</strong>, zero-shot and 18-exemplar
+few-shot, 3-class and 6-class. Fast, cheap, and tells us where the signal is reachable through a
+closed-weight API before we touch local fine-tuning.
 </p>
 
 <table>
@@ -51,10 +52,11 @@ it barely beats random on this balanced subset, i.e. parliamentary-trained senti
 dialogue when all classes are equally represented. Flash few-shot beats ParlaSent ZS by +0.22 F1_3.
 Full numbers: <code>runs/baselines/baselines_subset170.md</code>.</em></p>
 
-<p class="hedge">
-On the chopping board: when the full-ROG matrix (Report 4) completes, this page will be
-re-run with the broader eval subset so the OR numbers line up with the new matrix numbers.
-</p>
+<div class="init-concl">
+<strong>INITIAL CONCLUSION:</strong> Yes. Flash few-shot catches the signal cleanly at
+<strong>F1_3 = 0.607</strong> — <strong>+0.22</strong> over the stock parliamentary head. Few-shot helps
+both models. <strong>Flash &gt; Haiku</strong> on every scheme; Haiku is ~13× cheaper for ~−0.07 F1.
+</div>
 
 <details>
   <summary>Caveats + extras</summary>
@@ -109,13 +111,21 @@ user     : Utterance: {target_text}</pre>
 <h2>Progress — 2026-11-17</h2>
 
 <p class="finding">
-Two new batches: <strong>bigger OpenAI models</strong> (GPT-4o, GPT-5, GPT-5.6-luna) single-utterance;
-and <strong>3-turn conversational context</strong> on Flash + Haiku. Two reads:
-<strong>bigger-ceiling-model does not beat Flash</strong>, and <strong>context lifts +0.048 F1_3
-at matched 0-shot</strong> on both Flash and Haiku, even with ~1-second neighbour utterances.
+Phase 2 — give the probe more axes: <strong>bigger models</strong> (do the frontier OpenAI slugs
+find more signal than Flash?) and <strong>conversational context</strong> (does showing neighbours
+around each target help?). Two knobs, back-to-back.
 </p>
 
-<h3>Bigger OpenAI — does ceiling-size beat Flash?</h3>
+<details>
+  <summary style="font-size: 10.6pt; font-weight: 600;">
+    <strong>Bigger OpenAI — no, GPT sucked at it.</strong> Tap for the receipts.
+  </summary>
+  <div class="body">
+    <p style="margin: 0 0 1.5mm 0;">GPT-4o, GPT-5, and GPT-5.6-luna, same prompts as Flash/Haiku.
+    Flash fshot 3-cls = <strong>0.607</strong> still holds the crown. GPT-5 fshot sits ~−0.03 lower at
+    ~2× the Flash cost; its 6-cls fshot parse rate drops to 0.77 as reasoning exhausts the token budget
+    before a clean label. Cheap Luna 0-shot matches GPT-5 0-shot at ~1/25 the cost — cost-efficient tier is
+    where the signal lives, not the frontier.</p>
 
 <table>
   <thead>
@@ -139,8 +149,15 @@ holds the single-utterance crown.</strong> GPT-5 fshot 3-cls = 0.579 is within 0
 ~2× the cost of Flash. <strong>Luna 0-shot 3-cls (0.552) matches GPT-5 0-shot within noise at ~1/25 the
 cost</strong> — the cheap current-gen tier is where the signal lives.
 Full numbers: <code>runs/batch_FULL_20261117_104225/batch_results.csv</code>.</em></p>
+  </div>
+</details>
 
-<h3>Context (3-turn window) — does natural dialogue flow lift sentiment F1?</h3>
+<div class="init-concl neg">
+<strong>INITIAL CONCLUSION:</strong> No. Bigger ceiling models don't find more signal here —
+<strong>Flash still leads</strong>. Skip and move on.
+</div>
+
+<h3>Context (3-turn window) — does natural dialogue flow around each target help?</h3>
 
 <table>
   <thead>
@@ -173,21 +190,88 @@ split into three). The lift is real on the mixed-speaker subset AND on the singl
 analysis — but a stronger context window (longer neighbours, longer in words) is expected to amplify this.
 Full numbers: <code>runs/batch_CTX_20261117_124601/batch_results.csv</code>.</em></p>
 
+<div class="init-concl">
+<strong>INITIAL CONCLUSION:</strong> Yes. +0.048 F1_3 at matched 0-shot on both models.
+<strong>Flash ctx3 0-shot (0.639) beats Flash iso <em>few-shot</em> (0.607)</strong> — context takes
+the single-shot crown. Keep digging.
+</div>
+
 <p class="hedge">
-Next step on this track: <strong>refine the context builder</strong>. Current neighbours are often ~1 s
-(2–3 words), which doesn't give the model real conversational structure. A word-count-threshold builder
-(e.g. accumulate neighbour utterances left/right until ≥10 words each) would give actual context while
-preserving natural dialogue flow. Sweep context length as a third axis (10 · 20 · 30 words) to detect
-a peak / plateau analogous to the duration envelope in Report 6.
+We then <strong>refined the context builder</strong>. Current neighbours were ~1 s (2–3 words) — not
+real conversational structure. Switched to a word-count-threshold accumulator: pull utterances per side
+until cumulative word count ≥ W, sweep W as a third axis (10 · 20 · 30 · 50 words) to find a peak /
+plateau like the duration envelope in Report 6. Code: <code>03_run_openrouter_text_context.py --context-words W</code>.
+</p>
+
+<h3>Context W sweep — where does the signal plateau?</h3>
+
+<p class="finding">
+Sweep across <strong>W ∈ {10, 20, 30, 50}</strong> words per side (plus the iso and W=0 anchors from
+earlier). Flash is our primary probe going forward — most sensitive, closest to the IAA ceiling. Haiku
+rows retained for cross-check so we can tell "model-specific win" from "real signal".
+</p>
+
+<table>
+  <thead>
+    <tr><th>W</th><th>Flash 3-cls F1</th><th>Haiku 3-cls F1</th><th>Flash 6-cls F1</th><th>Haiku 6-cls F1</th><th>Flash 6-cls ρ</th><th>Haiku 6-cls ρ</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>iso (no ctx)</td><td>0.592</td><td>0.467</td><td>0.349</td><td>0.213</td><td>0.596</td><td>0.341</td></tr>
+    <tr><td>W=0 (±1 utt)</td><td>0.639</td><td>0.515</td><td>0.380</td><td>0.235</td><td>0.702</td><td>0.534</td></tr>
+    <tr><td>W=10</td><td>0.674</td><td>0.541</td><td>0.372</td><td>0.304</td><td>0.717</td><td>0.639</td></tr>
+    <tr class="warn"><td><strong>W=20</strong></td><td class="win"><strong>0.685</strong></td><td>0.569</td><td>0.366</td><td>0.335</td><td>0.708</td><td>0.616</td></tr>
+    <tr class="warn"><td><strong>W=30</strong></td><td>0.661</td><td class="good"><strong>0.571</strong></td><td class="win"><strong>0.394</strong></td><td class="win"><strong>0.368</strong></td><td class="win"><strong>0.759</strong></td><td class="win"><strong>0.644</strong></td></tr>
+    <tr><td>W=50</td><td>0.670</td><td>0.562</td><td>0.392</td><td>0.362</td><td>0.743</td><td>0.624</td></tr>
+    <tr class="ceiling"><td>IAA ceiling</td><td>0.699</td><td>—</td><td>0.625</td><td>—</td><td>—</td><td>—</td></tr>
+  </tbody>
+</table>
+<p style="font-size:8.4pt; color:#666; margin-top:0;"><em>All rows 0-shot, same 170-instance subset, same prompts. W is the per-side word-count threshold;
+each side accumulates neighbour utterances in chronological order until the cumulative word count crosses W.
+W=0 preserves the legacy ±1-utterance behaviour. <strong>Single-speaker windows drop 75 → 26 → 3 → 0 as W goes
+0 → 10 → 20 → 30</strong>, so by W=20 almost every window contains real turn-taking. Full numbers:
+<code>docs/ref_results/text_context/CTX_W{0,10,20,30,50}_...csv</code>.</em></p>
+
+<p style="margin: 2mm 0 1mm 0;"><strong>Context envelope — F1 vs (context W, target feature).</strong>
+Transparent gray plane is the iso (no-context) F1 averaged across bins; stems pierce above the plane where context
+helped (green) or dipped below (red). 3-D render from <code>scripts/6_sent_duration/06_rog_dia_explorer.ipynb</code>
+(paired with <code>.py</code>).</p>
+
+<img class="figure" src="img/ctx_envelope_flash_duration.png"
+     alt="Flash 0-shot 3-cls F1 across context W × target duration (s)">
+<figcaption>Flash 0-shot 3-cls · x=context W · y=target duration (s) · z=F1_3. Baseline iso = 0.571.
+Signal climbs into the back-right quadrant (higher W, longer targets).</figcaption>
+
+<img class="figure" src="img/ctx_envelope_flash_words.png"
+     alt="Flash 0-shot 3-cls F1 across context W × target word count">
+<figcaption>Flash 0-shot 3-cls · x=context W · y=target word count · z=F1_3. Baseline iso = 0.561.
+Same shape in word-space — short-target wins come from context, long-target wins are intrinsic.</figcaption>
+
+<div class="init-concl">
+<strong>INITIAL CONCLUSION:</strong> Yes, strongly. <strong>W=20</strong> is the 3-class peak
+(Flash 0.685 — within <strong>0.014 of the IAA ceiling</strong>, +0.093 F1_3 over iso). <strong>W=30</strong>
+is the 6-class peak. <strong>Plateau by W=30–50</strong> — more context doesn't help further. 6-class
+still has ~0.23 F1 to the IAA ceiling; context alone won't close that gap.
+</div>
+
+<p class="hedge">
+<strong>170-subset qualifier:</strong> all comparisons on this page use <code>data/subset_174_seed42_v2.jsonl</code>
+— a <strong>class-balanced (29 per 6-class) and ≥2 s-filtered</strong> speaker-disjoint eval subset drawn from ROG
+dev+test. Not the natural ROG distribution (where majority alone is 0.27). Absolute F1 should not be compared to the
+full-ROG numbers in Report 4 (n=434, 2 s-filtered) or Report 6; direction of deltas transfers. The 2 s filter cost
+only ~0.008 F1_3 on ROG-test per the Report 4 compare, so the qualifier is mostly about <em>balance</em>, not
+<em>length</em>. Validation step on full-ROG test (n=2233) for the winning W is queued.
 </p>
 
 <footer>
 Full batches: <code>runs/batch_FULL_20261111_115520/</code> ·
 <code>runs/batch_FULL_20261117_104225/</code> ·
-<code>runs/batch_CTX_20261117_124601/</code> · rerun scripts:
-<code>scripts/2_probe_text/02_run_openrouter_text.py</code>,
+<code>runs/batch_CTX_20261117_124601/</code> (W=0) ·
+<code>runs/batch_CTXW{10,20,30,50}_20261117_*/</code> · lean per-batch result files:
+<code>docs/ref_results/text_{single_utterance,context}/</code> (gitignored) ·
+rerun scripts: <code>scripts/2_probe_text/02_run_openrouter_text.py</code>,
 <code>scripts/2_probe_text/03_run_openrouter_text_context.py</code> ·
-analyzer: <code>scripts/analyze_probe.py</code>
+analyzer: <code>scripts/analyze_probe.py</code> · envelope plots:
+<code>scripts/6_sent_duration/06_rog_dia_explorer.ipynb</code>
 </footer>
 
 </body>

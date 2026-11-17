@@ -146,6 +146,17 @@ li strong { color: #111; }
     border-radius: 1mm;
 }
 .conclusion strong { color: #194a28; }
+/* Short per-test wrap-up — the "did this knob help find the sentiment signal?" one-liner. */
+.init-concl {
+    background: #eef7ec; border-left: 3px solid #2e8b4d;
+    padding: 1.4mm 2.6mm; margin: 1.2mm 0 2mm 0; font-size: 9.6pt;
+    border-radius: 1mm; line-height: 1.35;
+}
+.init-concl strong { color: #194a28; letter-spacing: 0.02em; }
+.init-concl.neg { background: #fbecea; border-left-color: #a03a2a; }
+.init-concl.neg strong { color: #6b2414; }
+.init-concl.flat { background: #fdf7e2; border-left-color: #c89020; }
+.init-concl.flat strong { color: #6a4a08; }
 .placeholder {
     background: #f6f6f6; border: 1px dashed #bbb;
     padding: 4mm 5mm; margin: 2mm 0; border-radius: 2mm;

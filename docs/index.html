@@ -80,8 +80,12 @@ on ROG-test, not on the 170-instance subset).</p>
     <tr><th class="l">knob</th><th class="l">matched comparison</th><th>from</th><th>to</th><th>ΔF1_3</th><th>% of "from"</th></tr>
   </thead>
   <tbody>
-    <tr><td class="l"><strong>context window</strong></td><td class="l">single-utt → 3-turn ctx, Flash 0-shot</td><td>0.592</td><td>0.639</td><td class="good">+0.048</td><td class="good">+8.1 %</td></tr>
-    <tr><td class="l"><strong>context window</strong></td><td class="l">single-utt → 3-turn ctx, Haiku 0-shot</td><td>0.467</td><td>0.515</td><td class="good">+0.048</td><td class="good">+10.3 %</td></tr>
+    <tr><td class="l"><strong>context window (±1 utt)</strong></td><td class="l">single-utt → 3-turn ctx (W=0, ~4 words/side), Flash 0-shot</td><td>0.592</td><td>0.639</td><td class="good">+0.048</td><td class="good">+8.1 %</td></tr>
+    <tr><td class="l"><strong>context window (W=20)</strong></td><td class="l">single-utt → ctx W=20 words/side, Flash 0-shot <sup>★</sup></td><td>0.592</td><td class="win">0.685</td><td class="win">+0.093</td><td class="win">+15.7 %</td></tr>
+    <tr><td class="l"><strong>context window (W=20)</strong></td><td class="l">single-utt → ctx W=20 words/side, Haiku 0-shot</td><td>0.467</td><td>0.569</td><td class="win">+0.102</td><td class="win">+21.8 %</td></tr>
+    <tr><td class="l"><strong>context W-sweep</strong></td><td class="l">W=0 → W=20, Flash 0-shot 3-cls (where in the sweep is the peak?)</td><td>0.639</td><td>0.685</td><td class="good">+0.045</td><td class="good">+7.1 %</td></tr>
+    <tr><td class="l"><strong>context W-sweep</strong></td><td class="l">W=20 → W=30, Flash 0-shot 3-cls (plateau check)</td><td>0.685</td><td>0.661</td><td class="meh">−0.024</td><td class="meh">−3.5 %</td></tr>
+    <tr><td class="l"><strong>context W-sweep (6-cls)</strong></td><td class="l">W=0 → W=30, Flash 0-shot 6-cls (6-cls peaks later than 3-cls)</td><td>0.380</td><td>0.394</td><td class="good">+0.014</td><td class="good">+3.7 %</td></tr>
     <tr><td class="l"><strong>few-shot (18 ex.)</strong></td><td class="l">0-shot → 18-ex fshot, Haiku 3-cls</td><td>0.467</td><td>0.534</td><td class="good">+0.067</td><td class="good">+14.3 %</td></tr>
     <tr><td class="l"><strong>few-shot (18 ex.)</strong></td><td class="l">0-shot → 18-ex fshot, Flash 3-cls</td><td>0.592</td><td>0.607</td><td class="mid">+0.015</td><td class="mid">+2.5 %</td></tr>
     <tr><td class="l"><strong>few-shot (18 ex.)</strong></td><td class="l">0-shot → 18-ex fshot, GPT-5 3-cls</td><td>0.552</td><td>0.579</td><td class="mid">+0.027</td><td class="mid">+4.9 %</td></tr>
@@ -121,7 +125,8 @@ the fine-tune matrix was not re-run on the 170-subset; everything else is on the
 subsets share the same gold-labelling pipeline, so direction of the delta transfers; absolute F1
 cannot be compared across eval sets.
 Audio rows: Flash + Carbon on the 170-subset, shelved after few-shot destroyed the audio prompt.
-"Luna 0-shot" = <code>openai/gpt-5.6-luna</code>; "Carbon" = Gemini Carbon 4 (audio-native frontier tier).</em></p>
+"Luna 0-shot" = <code>openai/gpt-5.6-luna</code>; "Carbon" = Gemini Carbon 4 (audio-native frontier tier).
+<sup>★</sup> = the pragmatic peak of the current OR context sweep (W ∈ {0, 10, 20, 30, 50}); see Report 2.</em></p>
 
 <h2>Legacy</h2>
 <p>The original monolith report lives at

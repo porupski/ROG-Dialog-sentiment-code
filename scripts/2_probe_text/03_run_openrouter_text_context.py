@@ -1,30 +1,38 @@
 #!/usr/bin/env python3
-"""Run text-sentiment configs via OpenRouter with a 3-turn natural-flow context window.
+"""Run text-sentiment configs via OpenRouter with a natural-flow context window.
 
 Sibling of 02_run_openrouter_text.py. Same subset, same MODELS, same parser, same
-retry/backoff, same JSONL schema (plus window fields). The only experimental change is
+retry/backoff, same JSONL schema (plus window fields). The experimental change is
 the user message: instead of one isolated utterance, the model sees
 
     [SPK1] <prev utterance>
+    [SPK1] <prev utterance>
     [SPK2] <target utterance>  [TARGET]
     [SPK1] <next utterance>
+    [SPK2] <next utterance>
 
 and is told to classify ONLY the [TARGET] turn.
 
-Window construction:
+Window construction — WORD-THRESHOLD ACCUMULATOR:
   - Each target in data/subset_174_seed42_v2.jsonl is joined by instance_id to the FULL
     ROG v2 corpus (data/rog_dialog_v2_instance.jsonl). A target missing from the corpus
     is a hard error.
-  - Neighbours = previous / next utterance in the same file_id, ordered by
-    (start_t, end_t, instance_id). Neighbours are taken from the full corpus, not the subset.
-  - Speakers are collapsed per window: first-seen speaker is SPK1, next distinct is SPK2, ...
-  - Boundary policy: a missing neighbour slot is rendered as a bare "[NONE]" line and the row
-    gets boundary_flag in {"ok", "no_prev", "no_next", "no_both"}. Nothing is dropped.
+  - For each side (prev / next), accumulate utterances in the same file_id, ordered by
+    (start_t, end_t, instance_id), stepping outward from the target, until the cumulative
+    word count reaches --context-words. The side closes at the utterance that CROSSES the
+    threshold (so a short-utterance file gets a couple extra words, a long-utterance file
+    gets one neighbour and done).
+  - --context-words 0 reproduces the LEGACY ±1-utterance behaviour (the 2026-11-17 committed
+    batch batch_CTX_20261117_124601 was W=0), so the first shipped batch is reproducible.
+  - Speakers collapse per window: chronological first-seen → SPK1, next distinct → SPK2, ...
+  - Boundary policy: a side with zero available utterances is rendered as "[NONE]" and the
+    row gets boundary_flag in {"ok", "no_prev", "no_next", "no_both"}. Nothing is dropped.
+    "ok" does NOT imply the word threshold was hit — only that at least one utterance was
+    available on that side. per_side_hit_threshold flags record whether W was actually reached.
 
-Pass 1: {haiku, flash} x 0shot x {6cls, 3cls} = 4 runs x 170 = 680 calls.
-The three OpenAI models and fshot are supported by the code; add rows to TASKS to run them.
-(fshot renders each few-shot example as its own ctx3 window from the corpus, so prompts
-are ~18x longer.)
+Pass 1 (committed): {haiku, flash} x 0shot x {6cls, 3cls} x W=0 = 4 runs x 170 = 680 calls.
+Current sweep: run the same 4 configs across W in {10, 20, 30, 50} words to map the
+context-length envelope. Each W is a separate batch (one --context-words per invocation).
 
 --target-marker picks where [TARGET] goes (eol | after_spk | own_line). Use it with
 --test --n-examples 5 to compare variants before fixing DEFAULT_TARGET_MARKER.
@@ -54,13 +62,18 @@ SCRIPT_LOG = RUNS_DIR / "_script_log.jsonl"
 
 OR_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-CONTEXT_MODE = "ctx3"
 MAX_TOKENS = 500
 TEMPERATURE = 0
 NONE_TOKEN = "[NONE]"
 TARGET_TOKEN = "[TARGET]"
 TARGET_MARKERS = ["eol", "after_spk", "own_line"]
-DEFAULT_TARGET_MARKER = "eol"   # provisional until the 5-call placement test is run
+DEFAULT_TARGET_MARKER = "eol"      # confirmed cleanest parse in the 2026-11-17 placement test
+DEFAULT_CONTEXT_WORDS = 20         # 0 = legacy ±1-utterance; otherwise accumulate until W words per side
+
+
+def context_mode_tag(words):
+    """Canonical context_mode string. W=0 preserves the legacy 'ctx3' label."""
+    return "ctx3" if words == 0 else f"ctx_w{words}"
 
 # =========================================================================
 # EDIT HERE to change what gets run.
@@ -167,73 +180,141 @@ def _dur(row):
     return row["end_t"] - row["start_t"]
 
 
-def build_window(inst, corpus):
-    """inst: a subset / few-shot row. Returns the window dict that goes into the JSONL row.
+def _word_count(text):
+    return len((text or "").split())
 
-    Target text comes from `inst` (identical to what 02_ sent), neighbours from the corpus.
+
+def _accumulate_side(lst, start_idx, direction, target_words):
+    """Walk lst from start_idx in direction (+1 or -1), collecting utterances until the
+    cumulative word count reaches target_words. The utterance that CROSSES the threshold is
+    included. target_words=0 → take exactly one utterance (legacy ±1 behaviour). Returns
+    (items in chronological order, cumulative word count, hit_threshold flag).
+    """
+    items = []
+    total = 0
+    i = start_idx + direction
+    while 0 <= i < len(lst):
+        items.append(lst[i])
+        total += _word_count(lst[i]["text"])
+        if target_words == 0 or total >= target_words:
+            break
+        i += direction
+    if direction < 0:
+        items.reverse()
+    hit = (target_words == 0 and len(items) > 0) or (target_words > 0 and total >= target_words)
+    return items, total, hit
+
+
+def build_window(inst, corpus, context_words):
+    """Build the window dict for one target. Target text comes from `inst` (matches what 02_
+    sent), neighbours are pulled from the full corpus. context_words=0 → legacy ±1 window.
     """
     iid = inst["instance_id"]
-    try:
-        crow, prev, nxt = corpus.neighbours(iid)
-    except KeyError:
+    if iid not in corpus.by_id:
         raise SystemExit(
             f"FATAL: target instance {iid} is not in {CORPUS}. The subset was built from this "
             f"corpus, so this means the wrong corpus file (e.g. a slim sample) or a changed "
             f"subset. Refusing to pad silently."
         )
+    crow = corpus.by_id[iid]
     if crow["file_id"] != inst["file_id"]:
         raise SystemExit(f"FATAL: file_id mismatch for {iid}: subset={inst['file_id']} corpus={crow['file_id']}")
 
-    flag = {(True, True): "ok", (False, True): "no_prev",
-            (True, False): "no_next", (False, False): "no_both"}[(prev is not None, nxt is not None)]
+    lst = corpus.by_file[crow["file_id"]]
+    i = corpus.pos[iid]
+    prev_items, prev_wc, prev_hit = _accumulate_side(lst, i, -1, context_words)
+    next_items, next_wc, next_hit = _accumulate_side(lst, i, +1, context_words)
 
+    have_prev, have_next = len(prev_items) > 0, len(next_items) > 0
+    flag = {(True, True): "ok", (False, True): "no_prev",
+            (True, False): "no_next", (False, False): "no_both"}[(have_prev, have_next)]
+
+    # Collapse speakers in chronological order: prev oldest → target → next newest.
     spk_map = {}
-    window_speakers = []
-    for r in (prev, crow, nxt):
-        if r is None:
-            window_speakers.append(None)
-            continue
-        spk_map.setdefault(r["speaker"], f"SPK{len(spk_map) + 1}")
-        window_speakers.append(spk_map[r["speaker"]])
+    def collapse(spk):
+        spk_map.setdefault(spk, f"SPK{len(spk_map) + 1}")
+        return spk_map[spk]
+    prev_collapsed = [collapse(r["speaker"]) for r in prev_items]
+    target_collapsed = collapse(crow["speaker"])
+    next_collapsed = [collapse(r["speaker"]) for r in next_items]
+
+    def _item_d(r, cspk):
+        return {"instance_id": r["instance_id"], "text": r["text"], "speaker": r["speaker"],
+                "collapsed_speaker": cspk, "word_count": _word_count(r["text"]),
+                "duration_sec": round(_dur(r), 3)}
+    prev_items_d = [_item_d(r, c) for r, c in zip(prev_items, prev_collapsed)]
+    next_items_d = [_item_d(r, c) for r, c in zip(next_items, next_collapsed)]
+
+    nearest_prev = prev_items[-1] if prev_items else None   # closest-to-target on prev side
+    nearest_next = next_items[0] if next_items else None    # closest-to-target on next side
+    distinct_spk = {crow["speaker"], *(r["speaker"] for r in prev_items + next_items)}
+    all_rows = prev_items + [crow] + next_items
+    window_duration = round(sum(_dur(r) for r in all_rows), 3)
 
     return {
         "target_instance_id": iid,
-        "prev_instance_id": prev["instance_id"] if prev else None,
-        "next_instance_id": nxt["instance_id"] if nxt else None,
-        "prev_text": prev["text"] if prev else None,
         "target_text": inst["text"],
-        "next_text": nxt["text"] if nxt else None,
-        "prev_speaker": prev["speaker"] if prev else None,
         "target_speaker": crow["speaker"],
-        "next_speaker": nxt["speaker"] if nxt else None,
-        "window_speakers": window_speakers,
+        "target_collapsed_speaker": target_collapsed,
+        # Accumulated arrays (chronological on each side)
+        "prev_items": prev_items_d,
+        "next_items": next_items_d,
+        "n_prev_items": len(prev_items_d),
+        "n_next_items": len(next_items_d),
+        "prev_word_count": prev_wc,
+        "next_word_count": next_wc,
+        "prev_hit_threshold": prev_hit,
+        "next_hit_threshold": next_hit,
+        "context_words_target": context_words,
+        # Nearest-neighbour fields (preserved from the legacy W=0 schema for inspection)
+        "prev_instance_id": nearest_prev["instance_id"] if nearest_prev else None,
+        "next_instance_id": nearest_next["instance_id"] if nearest_next else None,
+        "prev_text": nearest_prev["text"] if nearest_prev else None,
+        "next_text": nearest_next["text"] if nearest_next else None,
+        "prev_speaker": nearest_prev["speaker"] if nearest_prev else None,
+        "next_speaker": nearest_next["speaker"] if nearest_next else None,
+        # 3-slot speaker summary — [nearest_prev, target, nearest_next] collapsed tokens.
+        # Meaningful only when W=0; kept for backward-compat with the committed batch.
+        "window_speakers": [
+            prev_collapsed[-1] if prev_collapsed else None,
+            target_collapsed,
+            next_collapsed[0] if next_collapsed else None,
+        ],
+        "window_distinct_speakers_count": len(distinct_spk),
         "boundary_flag": flag,
-        "window_duration_sec": (round(_dur(prev) + _dur(crow) + _dur(nxt), 3) if flag == "ok" else None),
+        "window_duration_sec": window_duration,
         "target_text_matches_corpus": inst["text"] == crow["text"],
     }
 
 
 def render_window(win, target_marker):
-    def line(spk, text, is_target):
-        if spk is None:
-            return NONE_TOKEN
-        tok = f"[{spk}]"
-        if not is_target:
-            return f"{tok} {text}"
-        if target_marker == "eol":
-            return f"{tok} {text}  {TARGET_TOKEN}"
-        if target_marker == "after_spk":
-            return f"{tok} {TARGET_TOKEN} {text}"
-        if target_marker == "own_line":
-            return f"{TARGET_TOKEN}\n{tok} {text}"
+    """Render variable-width window as [SPK*] / [NONE] / [TARGET] text lines.
+    Prev side chronological; then target; then next side chronological."""
+    lines = []
+    if win["prev_items"]:
+        for it in win["prev_items"]:
+            lines.append(f"[{it['collapsed_speaker']}] {it['text']}")
+    else:
+        lines.append(NONE_TOKEN)
+
+    tok = f"[{win['target_collapsed_speaker']}]"
+    text = win["target_text"]
+    if target_marker == "eol":
+        lines.append(f"{tok} {text}  {TARGET_TOKEN}")
+    elif target_marker == "after_spk":
+        lines.append(f"{tok} {TARGET_TOKEN} {text}")
+    elif target_marker == "own_line":
+        lines.append(f"{TARGET_TOKEN}\n{tok} {text}")
+    else:
         raise ValueError(target_marker)
 
-    s = win["window_speakers"]
-    return "\n".join([
-        line(s[0], win["prev_text"], False),
-        line(s[1], win["target_text"], True),
-        line(s[2], win["next_text"], False),
-    ])
+    if win["next_items"]:
+        for it in win["next_items"]:
+            lines.append(f"[{it['collapsed_speaker']}] {it['text']}")
+    else:
+        lines.append(NONE_TOKEN)
+
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------- prompts
@@ -242,7 +323,7 @@ def system_prompt(class_scheme):
     labels = LABELS_6 if class_scheme == "6cls" else LABELS_3
     return (
         "You classify Slovenian spoken-dialogue utterances by sentiment.\n"
-        "You are shown three consecutive turns from one conversation "
+        "You are shown a series of consecutive turns from one conversation "
         f"({NONE_TOKEN} = no turn in that position); classify ONLY the turn marked "
         f"{TARGET_TOKEN}, using the other turns as context.\n"
         "Choose exactly one label from this list:\n"
@@ -441,9 +522,18 @@ def run_one(key, cfg, subset, windows, fewshot, out_dir, n_examples=None, dry_ru
                 "class_scheme": cfg["class_scheme"],
                 "shot_mode": cfg["shot_mode"],
                 "context_mode": cfg["context_mode"],
+                "context_words_target": cfg["context_words"],
                 "target_marker": cfg["target_marker"],
                 # --- window fields (new vs 02_) ---
                 "target_instance_id": win["target_instance_id"],
+                "prev_items": win["prev_items"],
+                "next_items": win["next_items"],
+                "n_prev_items": win["n_prev_items"],
+                "n_next_items": win["n_next_items"],
+                "prev_word_count": win["prev_word_count"],
+                "next_word_count": win["next_word_count"],
+                "prev_hit_threshold": win["prev_hit_threshold"],
+                "next_hit_threshold": win["next_hit_threshold"],
                 "prev_instance_id": win["prev_instance_id"],
                 "next_instance_id": win["next_instance_id"],
                 "prev_text": win["prev_text"],
@@ -452,6 +542,7 @@ def run_one(key, cfg, subset, windows, fewshot, out_dir, n_examples=None, dry_ru
                 "target_speaker": win["target_speaker"],
                 "next_speaker": win["next_speaker"],
                 "window_speakers": win["window_speakers"],
+                "window_distinct_speakers_count": win["window_distinct_speakers_count"],
                 "boundary_flag": win["boundary_flag"],
                 "window_duration_sec": win["window_duration_sec"],
                 # --- back to 02_ schema ---
@@ -505,10 +596,16 @@ def main():
     ap.add_argument("--schemes", nargs="*", default=None, choices=["6cls", "3cls"])
     ap.add_argument("--target-marker", default=DEFAULT_TARGET_MARKER, choices=TARGET_MARKERS,
                     help="Where [TARGET] goes: end of target line / after speaker token / own line above")
+    ap.add_argument("--context-words", type=int, default=DEFAULT_CONTEXT_WORDS,
+                    help="Words accumulated per side before closing. 0 = legacy ±1-utterance window "
+                         "(reproduces batch_CTX_20261117_124601).")
     ap.add_argument("--out", default=str(RUNS_DIR))
     ap.add_argument("--dry-run", action="store_true", help="Do not hit OpenRouter; echo gold label as output")
     ap.add_argument("--show-prompt", action="store_true", help="Print the first instance's messages per run config and exit")
     args = ap.parse_args()
+
+    if args.context_words < 0:
+        raise SystemExit("--context-words must be >= 0 (0 = legacy ±1-utterance)")
 
     if args.test and args.n_examples is None:
         args.n_examples = 3
@@ -519,14 +616,24 @@ def main():
     corpus = CorpusIndex(load_jsonl(CORPUS))
 
     # Build ALL subset windows up front, so a missing target fails before any API spend,
-    # and so the boundary distribution is reported for the full subset even under --test.
-    windows = {inst["instance_id"]: build_window(inst, corpus) for inst in subset}
+    # and so the boundary / word-count distributions are reported for the full subset
+    # even under --test.
+    W = args.context_words
+    ctx_mode = context_mode_tag(W)
+    windows = {inst["instance_id"]: build_window(inst, corpus, W) for inst in subset}
     boundary_dist = dict(Counter(w["boundary_flag"] for w in windows.values()))
     n_text_mismatch = sum(not w["target_text_matches_corpus"] for w in windows.values())
-    n_same_spk = sum(1 for w in windows.values()
-                     if w["boundary_flag"] == "ok" and len(set(w["window_speakers"])) == 1)
-    print(f"Windows: {len(windows)} targets | boundary_flag: {boundary_dist} | "
-          f"single-speaker windows: {n_same_spk}")
+    n_same_spk = sum(1 for w in windows.values() if w["window_distinct_speakers_count"] == 1)
+    prev_wc_list = [w["prev_word_count"] for w in windows.values()]
+    next_wc_list = [w["next_word_count"] for w in windows.values()]
+    n_prev_hit = sum(1 for w in windows.values() if w["prev_hit_threshold"])
+    n_next_hit = sum(1 for w in windows.values() if w["next_hit_threshold"])
+    avg_prev_wc = sum(prev_wc_list) / len(prev_wc_list) if prev_wc_list else 0
+    avg_next_wc = sum(next_wc_list) / len(next_wc_list) if next_wc_list else 0
+    print(f"Windows: {len(windows)} targets | context_mode={ctx_mode} (W={W}) | "
+          f"boundary_flag: {boundary_dist} | single-speaker: {n_same_spk}")
+    print(f"  per-side word counts — prev avg={avg_prev_wc:.1f} (hit W: {n_prev_hit}/{len(windows)}); "
+          f"next avg={avg_next_wc:.1f} (hit W: {n_next_hit}/{len(windows)})")
     if n_text_mismatch:
         print(f"WARNING: {n_text_mismatch} targets have subset text != corpus text "
               f"(prompt uses SUBSET text, as 02_ did). Check the corpus file version.")
@@ -535,7 +642,8 @@ def main():
     shots_filter = set(args.shots) if args.shots else None
     schemes_filter = set(args.schemes) if args.schemes else None
 
-    tag = "CTX-TEST" if args.test else ("CTX-DRY" if args.dry_run else "CTX")
+    w_tag = "W0" if W == 0 else f"W{W}"
+    tag = f"CTX{w_tag}-TEST" if args.test else (f"CTX{w_tag}-DRY" if args.dry_run else f"CTX{w_tag}")
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     batch_id = f"batch_{tag}_{stamp}"
 
@@ -548,14 +656,16 @@ def main():
         if models_filter and mname not in models_filter: continue
         if shots_filter and shot not in shots_filter: continue
         if schemes_filter and scheme not in schemes_filter: continue
+        run_ctx_slug = "ctx" if W == 0 else f"ctxw{W}"
         configs.append({
-            "run_id": f"OR-text-ctx-{mname}-{shot}-{scheme}",
+            "run_id": f"OR-text-{run_ctx_slug}-{mname}-{shot}-{scheme}",
             "batch_id": batch_id,
             "infra": "OpenRouter",
             "modality": "text",
             "model": MODELS[mname],
             "model_name": mname,
-            "context_mode": CONTEXT_MODE,
+            "context_mode": ctx_mode,
+            "context_words": W,
             "shot_mode": shot,
             "class_scheme": scheme,
             "target_marker": args.target_marker,
@@ -567,7 +677,7 @@ def main():
     fewshot_pool = load_jsonl(FEWSHOT)
     fewshot = []
     if any(c["shot_mode"] == "fshot" for c in configs):
-        fewshot = [(ex, build_window(ex, corpus)) for ex in fewshot_pool]
+        fewshot = [(ex, build_window(ex, corpus, W)) for ex in fewshot_pool]
 
     if args.show_prompt:
         for cfg in configs:
@@ -616,11 +726,18 @@ def main():
             "subset_path": str(SUBSET),
             "fewshot_path": str(FEWSHOT),
             "corpus_path": str(CORPUS),
-            "context_mode": CONTEXT_MODE,
+            "context_mode": ctx_mode,
+            "context_words_target": W,
             "target_marker": args.target_marker,
             "boundary_flags_full_subset": boundary_dist,
             "n_single_speaker_windows": n_same_spk,
             "n_target_text_mismatch": n_text_mismatch,
+            "word_count_stats": {
+                "prev_avg": round(avg_prev_wc, 2), "next_avg": round(avg_next_wc, 2),
+                "n_prev_hit_threshold": n_prev_hit, "n_next_hit_threshold": n_next_hit,
+                "prev_min": min(prev_wc_list, default=0), "prev_max": max(prev_wc_list, default=0),
+                "next_min": min(next_wc_list, default=0), "next_max": max(next_wc_list, default=0),
+            },
             "models": {c["model_name"]: c["model"] for c in configs},
             "tasks_declared": [list(t) for t in TASKS],
             "runs": results,
@@ -640,6 +757,8 @@ def main():
                 "dry_run": args.dry_run,
                 "n_examples": args.n_examples,
                 "target_marker": args.target_marker,
+                "context_mode": ctx_mode,
+                "context_words_target": W,
                 "configs_run": [r["run_id"] for r in results],
                 "total_cost_usd": total_cost,
             }, ensure_ascii=False) + "\n")

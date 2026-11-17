@@ -7,3 +7,5 @@ results_docs
 __pycache__
 scripts/__pycache__
 *.pyc
+
+docs/ref_results
