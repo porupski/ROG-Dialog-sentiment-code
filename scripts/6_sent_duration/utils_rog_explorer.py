@@ -437,6 +437,227 @@ def matrix_grid_md(instance_id: str, cell_preds: dict) -> str:
             + "\n".join([header, sep] + body))
 
 
+# ---------------------------------------------------------------------------
+# Context-sweep envelope — 3-D F1 surface over (context W × target feature).
+#
+# The 170-instance OR-probe subset is tested across W ∈ {0, 10, 20, 30, 50} and
+# also an iso (no-context) baseline. For each W, we want to see how F1 varies
+# with a target-side feature (duration seconds, or target-text word count).
+#
+# Shape: baseline plane (iso F1_3, flat gray, see-through) plus a signal surface
+# rising above it where context helps. Smoothing is cosmetic — the raw grid is
+# always printed in a 2-D companion plot.
+# ---------------------------------------------------------------------------
+
+
+# The 2026-11-11 OR run used terse 3-cls labels; the 2026-11-17 runs use full words.
+# Normalize everything to the new scheme so iso + ctx batches score against a shared label set.
+_3CLS_ALIAS = {
+    "neg": "negative",  "negative": "negative",
+    "neu": "neutral",   "neutral":  "neutral",
+    "pos": "positive",  "positive": "positive",
+}
+
+
+def load_or_run_predictions(run_dir: Path) -> pd.DataFrame:
+    """Load one OR run's predictions.jsonl into a DataFrame with:
+    instance_id, gold_3, pred_3, parse_ok, duration, text, words. 3-cls labels are
+    normalized to the full-word scheme (neg → negative) to bridge the 2026-11-11
+    short-label batch and the 2026-11-17 long-label batches.
+    """
+    rows = []
+    with open(run_dir / "predictions.jsonl") as f:
+        for line in f:
+            r = json.loads(line)
+            pred = r.get("parsed_label")
+            gold3 = r.get("gold_sent3") or r.get("gold_for_scheme")
+            dur = r.get("duration")
+            text = r.get("text") or ""
+            if pred is None:
+                continue
+            rows.append({
+                "instance_id": r["instance_id"],
+                "gold_3": _3CLS_ALIAS.get(gold3, gold3),
+                "pred_3": _3CLS_ALIAS.get(pred, pred),
+                "parse_ok": r.get("parse_ok", True),
+                "duration": dur,
+                "text": text,
+                "words": len(text.split()),
+            })
+    return pd.DataFrame(rows)
+
+
+def _pick_run_dir(batch_dir: Path, model: str, shot: str, scheme: str) -> Path | None:
+    """Find a run dir inside a batch matching model/shot/scheme — tolerant of
+    02_ (OR-text-...) and 03_ (OR-text-ctx..., OR-text-ctxw20-...) naming."""
+    for d in sorted(batch_dir.iterdir()):
+        if not d.is_dir():
+            continue
+        n = d.name
+        if model in n and shot in n and scheme in n:
+            return d
+    return None
+
+
+def load_context_sweep(iso_batch: Path, ctx_batches: dict, model: str = "flash",
+                       shot: str = "0shot", scheme: str = "3cls") -> dict:
+    """Load predictions for the iso baseline plus every W context batch for one
+    (model, shot, scheme) config.
+
+    ctx_batches: {W_value: Path(batch_dir_for_that_W)}
+    Returns {W (-1 for iso): DataFrame}. Iso is keyed by W = -1 so the dict iters in a
+    natural "no-context → W=0 → W=10 → ..." order when sorted.
+    """
+    out = {}
+    iso_run = _pick_run_dir(iso_batch, model, shot, scheme)
+    if iso_run is None:
+        raise RuntimeError(f"iso run not found in {iso_batch} for {model}/{shot}/{scheme}")
+    out[-1] = load_or_run_predictions(iso_run)
+    for W, bdir in ctx_batches.items():
+        rd = _pick_run_dir(bdir, model, shot, scheme)
+        if rd is None:
+            raise RuntimeError(f"ctx W={W} run not found in {bdir} for {model}/{shot}/{scheme}")
+        out[W] = load_or_run_predictions(rd)
+    return out
+
+
+def context_envelope_grid(sweep: dict, feature: str = "duration",
+                          n_bins: int = 5, mode: str = "quantile",
+                          scheme: str = "3") -> tuple:
+    """Build the (W, feature-bin) grid of macro-F1. feature ∈ {'duration', 'words'}.
+    Bin edges are quantile edges over the UNION of all sweep rows (so the x-axis is
+    identical across W slices and surfaces are comparable).
+
+    Returns (W_values_sorted, bin_edges, F1_matrix[n_W, n_bins], count_matrix[n_W, n_bins]).
+    """
+    if feature not in ("duration", "words"):
+        raise ValueError("feature must be 'duration' or 'words'")
+    if scheme != "3":
+        raise ValueError("only 3-cls envelope is implemented (6-cls is in the sweep CSV but "
+                         "the sparse 29-per-class slice gets too thin per bin)")
+    labels3 = ["negative", "neutral", "positive"]
+
+    all_feat = []
+    for df in sweep.values():
+        if feature == "duration":
+            all_feat.extend(df["duration"].dropna().tolist())
+        else:
+            all_feat.extend(df["words"].tolist())
+    edges = _bin_edges(pd.Series(all_feat), n_bins, mode=mode)
+
+    Ws = sorted(sweep.keys())
+    F1 = np.full((len(Ws), n_bins), np.nan)
+    cnt = np.zeros((len(Ws), n_bins), dtype=int)
+    for w_idx, W in enumerate(Ws):
+        df = sweep[W]
+        feat = df["duration"].values if feature == "duration" else df["words"].values
+        gold = df["gold_3"].tolist()
+        pred = df["pred_3"].tolist()
+        for j in range(n_bins):
+            lo, hi = edges[j], edges[j + 1] + (1e-6 if j == n_bins - 1 else 0)
+            mask = (feat >= lo) & (feat < hi)
+            n = int(mask.sum())
+            if n == 0:
+                continue
+            g = [gold[i] for i in range(len(gold)) if mask[i]]
+            p = [pred[i] for i in range(len(pred)) if mask[i]]
+            cnt[w_idx, j] = n
+            F1[w_idx, j] = _macro_f1(g, p, labels3)
+    return Ws, edges, F1, cnt
+
+
+def plot_context_envelope_3d(sweep: dict, feature: str = "duration",
+                             n_bins: int = 5, mode: str = "quantile",
+                             scheme: str = "3", title_suffix: str = "",
+                             smooth_sigma: float = 1.2, finer_grid: int = 60):
+    """3-D surface of macro-F1 over (context-W × target-feature bin). Flat transparent
+    gray baseline plane is drawn at iso F1 (W=-1) averaged across bins — signal piercing
+    through the plane = context helped.
+
+    smooth_sigma / finer_grid: cosmetic smoothing — the raw grid is drawn as a scatter
+    with vertical stems so the eye can still see the 6×5 anchor points.
+    """
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+    from scipy.interpolate import RegularGridInterpolator
+    from scipy.ndimage import gaussian_filter
+
+    Ws, edges, F1, cnt = context_envelope_grid(sweep, feature=feature, n_bins=n_bins,
+                                               mode=mode, scheme=scheme)
+    iso_f1_per_bin = F1[Ws.index(-1)]   # iso row
+    iso_mean = float(np.nanmean(iso_f1_per_bin))
+
+    # X axis display: use an ordinal index so iso (-1) and W=0..50 sit side by side.
+    W_display = [max(w, 0) for w in Ws]
+    W_labels = ["iso" if w == -1 else f"W={w}" for w in Ws]
+    x_raw = np.arange(len(Ws), dtype=float)
+    y_raw = 0.5 * (edges[:-1] + edges[1:])
+    X_raw, Y_raw = np.meshgrid(x_raw, y_raw, indexing="ij")
+
+    # Interpolate + smooth to a finer grid for the "soft hills" surface.
+    F1_filled = np.where(np.isnan(F1), iso_mean, F1)   # fill NaNs with iso so hills don't dip
+    interp = RegularGridInterpolator((x_raw, y_raw), F1_filled, method="linear",
+                                     bounds_error=False, fill_value=iso_mean)
+    xf = np.linspace(x_raw.min(), x_raw.max(), finer_grid)
+    yf = np.linspace(y_raw.min(), y_raw.max(), finer_grid)
+    Xf, Yf = np.meshgrid(xf, yf, indexing="ij")
+    Zf = interp(np.stack([Xf.ravel(), Yf.ravel()], axis=-1)).reshape(Xf.shape)
+    Zf = gaussian_filter(Zf, sigma=smooth_sigma)
+
+    # Colormap vmin/vmax: anchor vmin to iso floor and vmax above the data peak so the
+    # dynamic range inside the panel maps across the full colormap — stops the surface
+    # from reading as a flat yellow-green.
+    vmin = max(0.0, iso_mean - 0.10)
+    vmax = min(1.0, max(float(np.nanmax(F1)) + 0.05, iso_mean + 0.25))
+    zlo  = max(0.0, iso_mean - 0.15)
+    zhi  = min(1.0, vmax + 0.02)
+
+    fig = plt.figure(figsize=(11.5, 6.8))
+    ax = fig.add_subplot(111, projection="3d")
+
+    # Signal surface.
+    surf = ax.plot_surface(Xf, Yf, Zf, cmap="RdYlGn", vmin=vmin, vmax=vmax,
+                           edgecolor="none", linewidth=0, alpha=0.92,
+                           rstride=1, cstride=1)
+
+    # Baseline plane (transparent gray) at iso mean F1. Slight edge ring so it's visible
+    # from above even when the signal surface sits close to it.
+    Zb = np.full_like(Xf, iso_mean)
+    ax.plot_surface(Xf, Yf, Zb, color="#6a6a6a", alpha=0.20,
+                    edgecolor="none", linewidth=0)
+
+    # Raw grid anchor points with vertical stems to the baseline — makes the "pierce
+    # through the floor" shape explicit.
+    for i in range(len(Ws)):
+        for j in range(n_bins):
+            if cnt[i, j] == 0:
+                continue
+            x, y, z = x_raw[i], y_raw[j], F1[i, j]
+            ax.plot([x, x], [y, y], [iso_mean, z],
+                    color=("#3a7a3a" if z >= iso_mean else "#a04040"),
+                    lw=0.8, alpha=0.75)
+            ax.scatter([x], [y], [z], s=26,
+                       c=[z], cmap="RdYlGn", vmin=vmin, vmax=vmax,
+                       edgecolor="black", linewidth=0.4, depthshade=False)
+
+    ax.set_xticks(x_raw)
+    ax.set_xticklabels(W_labels, fontsize=8.5)
+    y_unit = "s" if feature == "duration" else "words"
+    ax.set_xlabel("context width"); ax.set_ylabel(f"target {feature} ({y_unit})")
+    ax.set_zlabel(f"macro-F1 ({scheme}-cls)")
+    ax.set_zlim(zlo, zhi)
+    ax.view_init(elev=28, azim=-120)
+    cbar = fig.colorbar(surf, ax=ax, shrink=0.6, label="macro-F1")
+    _ = cbar
+    ax.set_title(f"Context envelope — F1 vs (W, target {feature})  "
+                 f"baseline={iso_mean:.3f}{('  ·  ' + title_suffix) if title_suffix else ''}")
+    try:
+        fig.tight_layout()
+    except Exception:
+        pass
+    return fig, (Ws, edges, F1, cnt, iso_mean)
+
+
 def random_sample(df: pd.DataFrame, n=5, seed=None) -> pd.DataFrame:
     """Return n random rows from df, seeded. Empty df returns empty."""
     import random as _random
