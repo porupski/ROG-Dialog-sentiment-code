@@ -138,6 +138,31 @@ SOURCES: dict[str, dict] = {
         "modality": "text_transcript",
         "lang": "sl",
     },
+    # Context-windowed variants of rog_dia_full. Each pre-rendered by
+    # scripts/1_data_prep/prep_rog_context.py — the `text` field is the rendered
+    # multi-turn window with [SPK*] / [TARGET] markers so the regression head
+    # sees the same shape Flash does in the OR context sweep.
+    "rog_dia_full_ctxw10": {
+        "path": "data/rog_dialog_v2_instance_ctxw10.jsonl",
+        "reader": _reader_rog_dia_unfiltered,
+        "family": "dialog_speech",
+        "modality": "text_transcript",
+        "lang": "sl",
+    },
+    "rog_dia_full_ctxw20": {
+        "path": "data/rog_dialog_v2_instance_ctxw20.jsonl",
+        "reader": _reader_rog_dia_unfiltered,
+        "family": "dialog_speech",
+        "modality": "text_transcript",
+        "lang": "sl",
+    },
+    "rog_dia_full_ctxw30": {
+        "path": "data/rog_dialog_v2_instance_ctxw30.jsonl",
+        "reader": _reader_rog_dia_unfiltered,
+        "family": "dialog_speech",
+        "modality": "text_transcript",
+        "lang": "sl",
+    },
 }
 
 # Mixtures: train on the union of listed sources. Eval is on all entries of Config.eval_sources
@@ -156,6 +181,14 @@ MIXTURES: dict[str, list[str]] = {
     "SR_full":  ["parlasent_sl", "rog_dia_full"],
     "PR_full":  ["parlaspeech_si", "rog_dia_full"],
     "SPR_full": ["parlasent_sl", "parlaspeech_si", "rog_dia_full"],
+    # Context-windowed full-ROG — comparable to the Flash W-sweep in the OR text
+    # probe. Each row's `text` is a rendered multi-turn window (prev/target/next
+    # with [SPK*] + [TARGET]). Pre-render first:
+    #   python3 scripts/1_data_prep/prep_rog_context.py --W {10,20,30}
+    # Launch with: run_matrix.py --mixtures R_full_ctxw10 R_full_ctxw20 R_full_ctxw30 --gpu N
+    "R_full_ctxw10": ["rog_dia_full_ctxw10"],
+    "R_full_ctxw20": ["rog_dia_full_ctxw20"],
+    "R_full_ctxw30": ["rog_dia_full_ctxw30"],
 }
 
 BACKBONES: list[str] = [

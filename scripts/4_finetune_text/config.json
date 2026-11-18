@@ -63,6 +63,9 @@
   },
 
   "mixture_overrides": {
-    "S": { "num_epochs": 10 }
+    "S": { "num_epochs": 10 },
+    "R_full_ctxw10": { "max_length": 256 },
+    "R_full_ctxw20": { "max_length": 256 },
+    "R_full_ctxw30": { "max_length": 320 }
   }
 }

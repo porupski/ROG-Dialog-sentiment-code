@@ -50,10 +50,10 @@ Backbone short names (`BACKBONES` in `utils_text_finetune.py`):
 - **Analyze**: `python3 scripts/analyze_probe.py runs/batch_FULLROG_<stamp>`
 - **Lean copy**: `results/or_phase0/iso/` (see §Results-save)
 
-### 0.2 — W=30 context on full ROG test
-- **When**: 2026-11-18 (launched)
-- **Status**: RUNNING
-- **Command**:
+### 0.2 — W=30 context on full ROG test (queue after 0.1 finishes)
+- **When**: 2026-11-18 (queued)
+- **Status**: TODO
+- **Command** (real — strip `--test --dry-run` from the smoke variant you ran earlier):
   ```
   python scripts/2_probe_text/03_run_openrouter_text_context.py \
       --models flash --shots 0shot --context-words 30 \
@@ -61,7 +61,8 @@ Backbone short names (`BACKBONES` in `utils_text_finetune.py`):
   ```
 - **Result dir**: `runs/batch_FULLROG_CTXW30_<stamp>/` (fill in)
 - **Analyze**: `python3 scripts/analyze_probe.py runs/batch_FULLROG_CTXW30_<stamp>`
-- **Lean copy**: `results/or_phase0/ctxw30/`
+- **Lean copy**: `python3 scripts/sync_results.py runs/batch_FULLROG_CTXW30_<stamp> or_phase0/ctxw30`
+- **Post-land**: fill in Report 2 (`docs/2_open_router_probing_text.html` → the 2026-11-18 Progress section I added) with the full-ROG iso vs W=30 F1 numbers.
 
 ---
 
@@ -129,20 +130,35 @@ Backbone short names (`BACKBONES` in `utils_text_finetune.py`):
   - `xlm-roberta-large × S` → 0.605
 - **Lean copy**: `results/finetune/20261118_132942/`
 
-### 3.2 — next 4 mixtures × 3 backbones (overnight)
-- **When**: 2026-11-18 (launching now)
+### 3.2 — SKIPPED (user override)
+User chose to move to context fine-tune instead of PR_full / SPR_full — "comparable
+to the flash ctx runs" is the more interesting next step. The 4-mixtures-× 3
+matrix (R SR PR_full SPR_full) is parked; can be re-queued later.
+
+### 3.3 — context-windowed fine-tune (overnight) ← THE OVERNIGHT RUN
+- **When**: 2026-11-18 (launching tonight)
 - **Status**: TODO
-- **Command**:
+- **Prep** (one-shot — rebuilds the three JSONLs with pre-rendered windows):
+  ```
+  python3 scripts/1_data_prep/prep_rog_context.py --W 10
+  python3 scripts/1_data_prep/prep_rog_context.py --W 20
+  python3 scripts/1_data_prep/prep_rog_context.py --W 30
+  ```
+  → emits `data/rog_dialog_v2_instance_ctxw{10,20,30}.jsonl`, each 13 658 rows.
+- **Launch**:
   ```
   tmux new -s ft
   python3 scripts/4_finetune_text/run_matrix.py --gpu 3 --mode full \
       --backbones FacebookAI/xlm-roberta-large classla/xlm-r-parla classla/xlm-r-parlasent \
-      --mixtures R SR PR_full SPR_full 2>&1 | tee -a runs/finetune_$(date +%F_%H%M).log
+      --mixtures R_full_ctxw10 R_full_ctxw20 R_full_ctxw30 \
+      2>&1 | tee -a runs/finetune_ctx_$(date +%F_%H%M).log
   ```
-- **Expected elapsed**: ~2.5 h (12 cells × ~12 min, SPR_full ≈ 2× slower from larger train set → budget 3.5 h)
-- **Analysis**: auto-runs via `run_matrix.py` (analyze_finetune at the tail).
+- **Cells**: 3 backbones × 3 W's = **9 cells**. Window-rendered text is ~2–3× longer → `max_length` bumped to 256 (W10/20) / 320 (W30) via `mixture_overrides` in `config.json`.
+- **Expected elapsed**: ~2 h total (~12–15 min per cell).
+- **Analysis**: auto-runs via `run_matrix.py`.
 - **Result dir**: `runs/finetune_<stamp>/` (fill in)
-- **Lean copy**: `results/finetune/<stamp>/`
+- **Lean copy**: `python3 scripts/sync_results.py runs/finetune_<stamp> finetune/<stamp>`
+- **Post-land**: table in `docs/4_local_text_probing_finetuning.html` (2026-11-18 Progress section) for the ctx-W sweep, then compare to Flash W=30 lift (+0.093 F1_3 iso→W=30 on 170-subset).
 
 ---
 
