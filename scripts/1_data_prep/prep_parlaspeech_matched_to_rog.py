@@ -40,7 +40,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
 ROG_PATH = ROOT / "data" / "rog_dialog_v2_instance.jsonl"
-PARLA_PATH = ROOT / "data" / "parlaspeech_v4_si_utterance_instance_full.jsonl"
+PARLA_PATH = ROOT / "data" / "parlaspeech_v4_si_utterance_instance.jsonl"
 OUT_JSONL = ROOT / "data" / "parlaspeech_v4_si_matched_to_rog.jsonl"
 OUT_REPORT = ROOT / "data" / "parlaspeech_v4_si_matched_to_rog_report.md"
 

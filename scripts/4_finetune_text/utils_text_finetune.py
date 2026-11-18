@@ -20,6 +20,7 @@ import time
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Callable
+import numpy as np
 
 LABELS_6 = [
     "predominantlyNegative", "mixedNegative", "neutralNegative",
@@ -377,8 +378,10 @@ def compute_metrics_from_preds(y_gold_raw: list[float], y_pred_raw: list[float])
     try:
         from scipy.stats import spearmanr
         sp = spearmanr(y_gold_raw, y_pred_raw).correlation
-        if sp != sp:
-            sp = None
+        if not np.isfinite(sp):
+            sp = 0.0
+        # if sp != sp:
+        #     sp = None
     except ImportError:
         sp = None
 
