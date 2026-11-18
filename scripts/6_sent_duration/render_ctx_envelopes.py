@@ -31,7 +31,7 @@ OUT.mkdir(parents=True, exist_ok=True)
 
 for model in ("flash", "haiku"):
     sweep = u.load_context_sweep(ISO_BATCH, CTX_BATCHES, model=model, shot="0shot", scheme="3cls")
-    for feature in ("duration", "words"):
+    for feature in ("duration", "words", "wps"):
         fig, (Ws, edges, F1, cnt, iso) = u.plot_context_envelope_3d(
             sweep, feature=feature, n_bins=5, title_suffix=f"{model} 0-shot 3-cls")
         png = OUT / f"ctx_envelope_{model}_{feature}.png"

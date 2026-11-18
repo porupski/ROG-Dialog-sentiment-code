@@ -26,7 +26,12 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
-SUBSET = ROOT / "data" / "subset_174_seed42_v2.jsonl"
+# DEFAULT_SUBSET is the 170-instance class-balanced OR subset. Pass --eval-set to
+# point at any other JSONL in the same flat subset_*_v2 schema (e.g.
+# data/subset_rog_test_full.jsonl for full-ROG, data/subset_parlasent_sl_test.jsonl
+# for ParlaSent-SL home-domain reference). FULL_DATA (ROG v2 corpus) is only used for
+# the linprobe train pool, not swapped by --eval-set.
+DEFAULT_SUBSET = ROOT / "data" / "subset_174_seed42_v2.jsonl"
 FULL_DATA = ROOT / "data" / "rog_dialog_v2_instance.jsonl"
 RUNS_DIR = ROOT / "runs"
 SCRIPT_LOG = RUNS_DIR / "_script_log.jsonl"
@@ -306,7 +311,7 @@ def run_regression_for_model(model_id, instances, device):
 
 # =========================== Emit ===========================
 
-def _make_cfg(batch_id, mkey, model_id, proto, scheme):
+def _make_cfg(batch_id, mkey, model_id, proto, scheme, subset_path=None):
     run_id = f"LOCAL-text-{mkey}-{proto}-0shot-iso-{scheme}"
     return {
         "run_id": run_id,
@@ -316,6 +321,7 @@ def _make_cfg(batch_id, mkey, model_id, proto, scheme):
         "model": model_id,
         "model_name": mkey,
         "protocol": proto,
+        "subset_path": str(subset_path) if subset_path else None,
         "context_mode": "iso",
         "shot_mode": "0shot",
         "class_scheme": scheme,
@@ -388,7 +394,7 @@ def _write_meta(run_dir, cfg, started_at, elapsed_sec, n_inst, extra=None):
         "n_parsed_ok": n_inst,
         "total_cost_usd": 0.0,
         "fewshot_pool_size": 0,
-        "subset_path": str(SUBSET),
+        "subset_path": cfg.get("subset_path"),
         "fewshot_path": None,
     }
     if extra:
@@ -399,6 +405,25 @@ def _write_meta(run_dir, cfg, started_at, elapsed_sec, n_inst, extra=None):
 # =========================== Driver ===========================
 
 def main():
+    # GPU safety — non-negotiable on the shared remote. Pre-parse argv for --gpu
+    # and set CUDA_VISIBLE_DEVICES BEFORE any torch import happens anywhere in
+    # this process. No --gpu flag → force CPU by CVD="". Mirrors the preamble in
+    # scripts/6_sent_duration/07_baselines.py.
+    import os
+    _gpu_val = None
+    _argv = sys.argv[1:]
+    for i, a in enumerate(_argv):
+        if a == "--gpu" and i + 1 < len(_argv):
+            _gpu_val = _argv[i + 1]
+            break
+        if a.startswith("--gpu="):
+            _gpu_val = a.split("=", 1)[1]
+            break
+    if _gpu_val is None:
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    else:
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(_gpu_val)
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--test", action="store_true",
                     help="n_examples=6 per run; also caps train pool for linprobe to 60")
@@ -407,7 +432,18 @@ def main():
     ap.add_argument("--models", nargs="*", default=None, choices=list(MODELS.keys()))
     ap.add_argument("--protocols", nargs="*", default=None, choices=["fillmask", "linprobe", "reg"])
     ap.add_argument("--schemes", nargs="*", default=None, choices=["6cls", "3cls"])
-    ap.add_argument("--device", default="cpu", choices=["cpu", "cuda", "mps"])
+    ap.add_argument("--eval-set", default=None,
+                    help="Override the eval JSONL (default: data/subset_174_seed42_v2.jsonl). "
+                         "Accepts any file in the flat subset_*_v2 schema (e.g. "
+                         "data/subset_rog_test_full.jsonl, data/subset_parlasent_sl_test.jsonl).")
+    ap.add_argument("--eval-tag", default=None,
+                    help="Prefix the batch_id with this tag (e.g. FULLROG / PARLASENT) "
+                         "so new eval sets sort separately under runs/. "
+                         "No effect on run_id or JSONL schema. Defaults to empty.")
+    ap.add_argument("--gpu", type=str, default=None,
+                    help="Reserve a specific GPU index (e.g. --gpu 3). Omit to force CPU. "
+                         "CUDA_VISIBLE_DEVICES is set BEFORE any torch import to prevent "
+                         "accidental device grabs on shared machines.")
     args = ap.parse_args()
 
     if args.test and args.n_examples is None:
@@ -423,14 +459,35 @@ def main():
         print(f"Missing deps ({e}). Install: pip install torch transformers scikit-learn", file=sys.stderr)
         sys.exit(1)
 
-    subset = load_jsonl(SUBSET)
+    # Decide the device string passed to inference functions. torch is already imported
+    # under the CVD mask set above; "cuda" only resolves to a device if --gpu was passed.
+    import torch
+    use_cuda = (_gpu_val is not None) and torch.cuda.is_available()
+    device = "cuda" if use_cuda else "cpu"
+    print(f"[device] {device}  CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')!r}  "
+          f"torch.cuda.is_available={torch.cuda.is_available()}")
+
+    subset_path = Path(args.eval_set).resolve() if args.eval_set else DEFAULT_SUBSET
+    if not subset_path.exists():
+        raise SystemExit(f"missing eval set: {subset_path}")
+    subset = load_jsonl(subset_path)
     instances = subset[: args.n_examples] if args.n_examples else subset
 
     models_filter = set(args.models) if args.models else None
     protos_filter = set(args.protocols) if args.protocols else None
     schemes_filter = set(args.schemes) if args.schemes else None
 
-    tag = "TEST" if args.test else "FULL"
+    # batch-id tag:
+    #   --eval-tag FULLROG                 → batch_LOCAL_FULLROG_<stamp>
+    #   --eval-tag PARLASENT               → batch_LOCAL_PARLASENT_<stamp>
+    #   --eval-tag FULLROG --test          → batch_LOCAL_FULLROG_TEST_<stamp>
+    #   (default)                          → batch_LOCAL_FULL_<stamp>  (legacy)
+    #   --test (default eval)              → batch_LOCAL_TEST_<stamp>  (legacy)
+    pieces = []
+    if args.eval_tag: pieces.append(args.eval_tag)
+    if args.test: pieces.append("TEST")
+    elif not args.eval_tag: pieces.append("FULL")
+    tag = "_".join(pieces) or "FULL"
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     batch_id = f"batch_LOCAL_{tag}_{stamp}"
     batch_dir = RUNS_DIR / batch_id
@@ -449,7 +506,8 @@ def main():
         return
 
     print(f"Batch: {batch_id}")
-    print(f"Device: {args.device}  | eval_n={len(instances)}  | configs: {len(grouped)}")
+    print(f"Eval set: {subset_path.relative_to(ROOT) if subset_path.is_relative_to(ROOT) else subset_path}")
+    print(f"Device: {device}  | eval_n={len(instances)}  | configs: {len(grouped)}")
     for (mkey, proto), schemes in grouped.items():
         print(f"  - {mkey}/{proto}: {schemes}")
 
@@ -470,23 +528,23 @@ def main():
         if proto == "fillmask":
             for scheme in schemes:
                 print(f"  fillmask / {scheme}")
-                per_inst, elapsed = run_fillmask_for_model(model_id, scheme, instances, args.device)
-                cfg = _make_cfg(batch_id, mkey, model_id, proto, scheme)
+                per_inst, elapsed = run_fillmask_for_model(model_id, scheme, instances, device)
+                cfg = _make_cfg(batch_id, mkey, model_id, proto, scheme, subset_path=subset_path)
                 n_ok = _emit_fillmask(batch_dir, cfg, per_inst, scheme, elapsed, script_start)
                 results.append((cfg["run_id"], n_ok, len(instances), elapsed))
 
         elif proto == "linprobe":
-            pi6, pi3, timing = run_linprobe_for_model(model_id, instances, train_pool, args.device)
+            pi6, pi3, timing = run_linprobe_for_model(model_id, instances, train_pool, device)
             for scheme in schemes:
-                cfg = _make_cfg(batch_id, mkey, model_id, proto, scheme)
+                cfg = _make_cfg(batch_id, mkey, model_id, proto, scheme, subset_path=subset_path)
                 per_inst = pi6 if scheme == "6cls" else pi3
                 n_ok = _emit_linprobe(batch_dir, cfg, per_inst, scheme, timing, len(train_pool), script_start)
                 results.append((cfg["run_id"], n_ok, len(instances), timing["embed_sec"] + timing["fit_sec"]))
 
         elif proto == "reg":
-            per_inst, elapsed = run_regression_for_model(model_id, instances, args.device)
+            per_inst, elapsed = run_regression_for_model(model_id, instances, device)
             for scheme in schemes:
-                cfg = _make_cfg(batch_id, mkey, model_id, proto, scheme)
+                cfg = _make_cfg(batch_id, mkey, model_id, proto, scheme, subset_path=subset_path)
                 n_ok = _emit_regression(batch_dir, cfg, per_inst, scheme, elapsed, script_start)
                 results.append((cfg["run_id"], n_ok, len(instances), elapsed))
 
@@ -498,11 +556,14 @@ def main():
         "test_mode": args.test,
         "n_examples_per_run": args.n_examples,
         "n_subset": len(subset),
-        "subset_path": str(SUBSET),
+        "subset_path": str(subset_path),
+        "eval_tag": args.eval_tag,
         "full_data_path": str(FULL_DATA),
         "models": MODELS,
         "train_pool_size": len(train_pool) if train_pool else 0,
-        "device": args.device,
+        "device": device,
+        "gpu_arg": _gpu_val,
+        "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
         "runs": [{"run_id": r[0], "n_correct": r[1], "n": r[2], "elapsed_sec": round(r[3], 2)} for r in results],
         "total_cost_usd": 0.0,
     }
@@ -518,7 +579,7 @@ def main():
             "argv": sys.argv,
             "test_mode": args.test,
             "configs_run": [r[0] for r in results],
-            "device": args.device,
+            "device": device,
         }, ensure_ascii=False) + "\n")
 
     print(f"\nDone. Batch: {batch_dir.relative_to(ROOT)}")

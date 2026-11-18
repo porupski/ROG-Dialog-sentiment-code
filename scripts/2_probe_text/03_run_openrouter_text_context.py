@@ -53,7 +53,12 @@ import requests
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
-SUBSET = ROOT / "data" / "subset_174_seed42_v2.jsonl"
+# DEFAULT_SUBSET is the 170-instance class-balanced OR subset. Pass --eval-set to
+# point at any other JSONL in the same flat subset_*_v2 schema (e.g.
+# data/subset_rog_test_full.jsonl for the full-ROG natural-distribution test, built
+# by scripts/1_data_prep/prep_rog_test_full.py). The corpus (CORPUS) is NOT swapped
+# — context windows are always resolved against the full ROG v2 corpus.
+DEFAULT_SUBSET = ROOT / "data" / "subset_174_seed42_v2.jsonl"
 FEWSHOT = ROOT / "data" / "fewshot_pool_18_seed42_v2.jsonl"
 CORPUS = ROOT / "data" / "rog_dialog_v2_instance.jsonl"
 KEY_FILE = ROOT / "misc" / "key.txt"
@@ -460,7 +465,7 @@ def extract_cost(usage):
 
 # ---------------------------------------------------------------- run loop
 
-def run_one(key, cfg, subset, windows, fewshot, out_dir, n_examples=None, dry_run=False):
+def run_one(key, cfg, subset, windows, fewshot, out_dir, subset_path, n_examples=None, dry_run=False):
     run_id = cfg["run_id"]
     run_dir = out_dir / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -579,7 +584,7 @@ def run_one(key, cfg, subset, windows, fewshot, out_dir, n_examples=None, dry_ru
         "total_cost_usd": total_cost,
         "fewshot_pool_size": len(fewshot_examples),
         "boundary_flags": dict(flags),
-        "subset_path": str(SUBSET),
+        "subset_path": str(subset_path),
         "fewshot_path": str(FEWSHOT),
         "corpus_path": str(CORPUS),
     }
@@ -599,6 +604,15 @@ def main():
     ap.add_argument("--context-words", type=int, default=DEFAULT_CONTEXT_WORDS,
                     help="Words accumulated per side before closing. 0 = legacy ±1-utterance window "
                          "(reproduces batch_CTX_20261117_124601).")
+    ap.add_argument("--eval-set", default=None,
+                    help="Override the eval JSONL (default: data/subset_174_seed42_v2.jsonl). "
+                         "Any file in the same flat subset_*_v2 schema is accepted — e.g. "
+                         "data/subset_rog_test_full.jsonl for the full-ROG natural-distribution test. "
+                         "Every row's instance_id must exist in CORPUS (so neighbours can be resolved).")
+    ap.add_argument("--eval-tag", default=None,
+                    help="Prefix the batch_id with this tag (e.g. FULLROG) so full-ROG batches "
+                         "sort separately from 170-subset batches under runs/. "
+                         "No effect on run_id or JSONL schema. Defaults to empty.")
     ap.add_argument("--out", default=str(RUNS_DIR))
     ap.add_argument("--dry-run", action="store_true", help="Do not hit OpenRouter; echo gold label as output")
     ap.add_argument("--show-prompt", action="store_true", help="Print the first instance's messages per run config and exit")
@@ -610,7 +624,10 @@ def main():
     if args.test and args.n_examples is None:
         args.n_examples = 3
 
-    subset = load_jsonl(SUBSET)
+    subset_path = Path(args.eval_set).resolve() if args.eval_set else DEFAULT_SUBSET
+    if not subset_path.exists():
+        raise SystemExit(f"missing eval set: {subset_path}")
+    subset = load_jsonl(subset_path)
     if not CORPUS.exists():
         raise SystemExit(f"missing {CORPUS}")
     corpus = CorpusIndex(load_jsonl(CORPUS))
@@ -642,8 +659,18 @@ def main():
     shots_filter = set(args.shots) if args.shots else None
     schemes_filter = set(args.schemes) if args.schemes else None
 
+    # batch-id tag:
+    #   --context-words 30                                 → batch_CTXW30_<stamp>
+    #   --context-words 30 --eval-tag FULLROG              → batch_FULLROG_CTXW30_<stamp>
+    #   --context-words 30 --test                          → batch_CTXW30_TEST_<stamp>
+    #   --context-words 30 --eval-tag FULLROG --test       → batch_FULLROG_CTXW30_TEST_<stamp>
     w_tag = "W0" if W == 0 else f"W{W}"
-    tag = f"CTX{w_tag}-TEST" if args.test else (f"CTX{w_tag}-DRY" if args.dry_run else f"CTX{w_tag}")
+    pieces = []
+    if args.eval_tag: pieces.append(args.eval_tag)
+    pieces.append(f"CTX{w_tag}")
+    if args.test: pieces.append("TEST")
+    elif args.dry_run: pieces.append("DRY")
+    tag = "_".join(pieces)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     batch_id = f"batch_{tag}_{stamp}"
 
@@ -705,7 +732,7 @@ def main():
     try:
         for cfg in configs:
             print(f"\n=== RUN {cfg['run_id']} ===")
-            meta = run_one(key, cfg, subset, windows, fewshot, batch_dir,
+            meta = run_one(key, cfg, subset, windows, fewshot, batch_dir, subset_path,
                            n_examples=args.n_examples, dry_run=args.dry_run)
             results.append(meta)
             print(f"  -> parsed_ok={meta['n_parsed_ok']}/{meta['n_instances']} "
@@ -723,7 +750,8 @@ def main():
             "n_examples_per_run": args.n_examples,
             "n_subset": len(subset),
             "n_fewshot_pool": len(fewshot_pool),
-            "subset_path": str(SUBSET),
+            "subset_path": str(subset_path),
+            "eval_tag": args.eval_tag,
             "fewshot_path": str(FEWSHOT),
             "corpus_path": str(CORPUS),
             "context_mode": ctx_mode,
