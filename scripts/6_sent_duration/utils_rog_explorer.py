@@ -121,6 +121,105 @@ def plot_histograms(df: pd.DataFrame, duration_floor: float = 2.0, wps_clip: flo
     return fig
 
 
+def label_dist_by_duration_band(df: pd.DataFrame,
+                                 edges: list[float] = (0, 2, 5, 10, float("inf")),
+                                 scheme: str = "6") -> pd.DataFrame:
+    """Return a long-form DataFrame of sentiment counts by duration band.
+
+    One row per (duration_band × label). Columns: band, label, count,
+    pct_within_band (count / n in band), pct_of_label_total (count of this label
+    in band / total count of this label across all bands).
+
+    Used to see WHO the 2 s duration floor actually drops — is the <2 s mass
+    neutral filler, or is the model losing real sentiment signal to the floor?
+    """
+    if scheme not in ("6", "3"):
+        raise ValueError("scheme must be '6' or '3'")
+    labels = LABELS_6 if scheme == "6" else ["negative", "neutral", "positive"]
+    lab_col = "sentiment" if scheme == "6" else "sentiment_3"
+
+    edges = list(edges)
+    band_names = []
+    for a, b in zip(edges[:-1], edges[1:]):
+        band_names.append(f"<{b:g} s" if a == 0 else
+                          (f"≥{a:g} s" if b == float("inf") else f"{a:g}–{b:g} s"))
+    band_of = np.full(len(df), -1, dtype=int)
+    dur = df["duration"].values
+    for i, (a, b) in enumerate(zip(edges[:-1], edges[1:])):
+        mask = (dur >= a) & (dur < b)
+        band_of[mask] = i
+
+    rows = []
+    totals_per_label = df[lab_col].value_counts().to_dict()
+    for i, name in enumerate(band_names):
+        sub = df[band_of == i]
+        n_band = len(sub)
+        for lbl in labels:
+            c = int((sub[lab_col] == lbl).sum())
+            rows.append({
+                "band": name,
+                "label": lbl,
+                "count": c,
+                "pct_within_band": round(100.0 * c / n_band, 2) if n_band > 0 else 0.0,
+                "pct_of_label_total": round(100.0 * c / totals_per_label.get(lbl, 1), 2),
+            })
+    return pd.DataFrame(rows)
+
+
+def plot_label_dist_by_duration_band(df: pd.DataFrame,
+                                      edges: list[float] = (0, 2, 5, 10, float("inf")),
+                                      scheme: str = "6"):
+    """100%-stacked bar — each duration band sums to 100%; colour segments show the
+    sentiment-class composition inside that band. The 2 s floor shows up as the gap
+    between the leftmost bar (<2 s, dropped by the matrix's 2 s-filtered training)
+    and the rest.
+
+    Returns (fig, dist_df). dist_df is the long-form table from
+    `label_dist_by_duration_band` (useful for the companion printed table).
+    """
+    import matplotlib.pyplot as plt
+    labels = LABELS_6 if scheme == "6" else ["negative", "neutral", "positive"]
+    dist = label_dist_by_duration_band(df, edges=edges, scheme=scheme)
+    band_order = list(dict.fromkeys(dist["band"].tolist()))  # preserve insertion order
+
+    # Diverging-ordinal palette: red = negative, yellow = neutral, green = positive.
+    # 6-cls gets a smoother ramp; 3-cls uses three stops.
+    if scheme == "6":
+        palette = ["#8b0000", "#d8512d", "#f0b25e", "#aed07a", "#4faa54", "#206020"]
+    else:
+        palette = ["#c0392b", "#f1c40f", "#2ecc71"]
+
+    totals = {b: dist[dist["band"] == b]["count"].sum() for b in band_order}
+    fig, ax = plt.subplots(figsize=(8.5, 4.8))
+    bottom = np.zeros(len(band_order))
+    x = np.arange(len(band_order))
+    for lbl, color in zip(labels, palette):
+        heights = []
+        for b in band_order:
+            row = dist[(dist["band"] == b) & (dist["label"] == lbl)].iloc[0]
+            heights.append(row["pct_within_band"])
+        heights = np.array(heights)
+        bars = ax.bar(x, heights, bottom=bottom, color=color, edgecolor="black",
+                      linewidth=0.4, label=lbl, width=0.78)
+        for xi, h, bo in zip(x, heights, bottom):
+            if h >= 4.0:  # only annotate segments that are big enough to read
+                ax.text(xi, bo + h / 2, f"{h:.0f}%",
+                        ha="center", va="center", fontsize=8,
+                        color=("white" if lbl in ("predominantlyNegative", "mixedNegative",
+                                                   "predominantlyPositive", "negative") else "black"))
+        bottom += heights
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"{b}\n(n={totals[b]})" for b in band_order])
+    ax.set_ylim(0, 100)
+    ax.set_ylabel("% within duration band")
+    ax.set_title(f"ROG v2 — sentiment-class composition by duration band ({scheme}-cls)")
+    ax.legend(title=f"{scheme}-cls label", loc="center left", bbox_to_anchor=(1.01, 0.5),
+              fontsize=8, title_fontsize=9, frameon=False)
+    fig.tight_layout()
+    return fig, dist
+
+
 def _bin_edges(series, n_bins, mode="quantile", clip=None):
     vals = series.values if clip is None else np.clip(series.values, 0, clip)
     if mode == "quantile":

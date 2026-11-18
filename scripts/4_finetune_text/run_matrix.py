@@ -54,6 +54,9 @@ def main():
                    help="subset of MIXTURES (default: all)")
     p.add_argument("--use_gpu", action="store_true",
                    help="arm reserved GPU from config.json (shared.reserved_gpu)")
+    p.add_argument("--gpu", type=str, default=None,
+                   help="override reserved GPU index on the command line (e.g. --gpu 3). "
+                        "Implies --use_gpu. Takes precedence over config.json.")
     p.add_argument("--out", "-o", default=None, help="override runs output dir")
     p.add_argument("--dry-run", action="store_true", help="print the planned command list only")
     args = p.parse_args()
@@ -61,13 +64,21 @@ def main():
     config_json = Path(args.config)
 
     env = os.environ.copy()
-    if args.use_gpu:
+    # Precedence for GPU choice:
+    #   --gpu N                 → N (implies --use_gpu)
+    #   --use_gpu, no --gpu     → config.json shared.reserved_gpu
+    #   neither                 → CPU (CVD='')
+    if args.gpu is not None:
+        gpu = str(args.gpu)
+        env["CUDA_VISIBLE_DEVICES"] = gpu
+        print(f"GPU guard: CUDA_VISIBLE_DEVICES={gpu} (--gpu CLI override)")
+    elif args.use_gpu:
         gpu = load_reserved_gpu(config_json)
         env["CUDA_VISIBLE_DEVICES"] = gpu
         print(f"GPU guard: CUDA_VISIBLE_DEVICES={gpu} (reserved GPU from config.json)")
     else:
         env["CUDA_VISIBLE_DEVICES"] = ""   # force CPU in child processes
-        print("No --use_gpu: child processes forced to CPU (CUDA_VISIBLE_DEVICES='').")
+        print("No --use_gpu / --gpu: child processes forced to CPU (CUDA_VISIBLE_DEVICES='').")
 
     env["TOKENIZERS_PARALLELISM"] = "false"
     env["MPLBACKEND"] = "Agg"
@@ -121,7 +132,8 @@ def main():
                "--mode", args.mode,
                "--config", str(config_json),
                "--out", str(out_dir)]
-        if args.use_gpu:
+        # --gpu implies --use_gpu at the child level; CVD is already masked to just that device.
+        if args.use_gpu or args.gpu is not None:
             cmd.append("--use_gpu")
 
         print(f"     cmd: {' '.join(cmd)}")

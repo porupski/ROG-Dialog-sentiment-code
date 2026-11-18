@@ -37,7 +37,7 @@
     "dataloader_num_workers": 2,
     "seed": 42,
     "out_dir": "runs/finetune",
-    "reserved_gpu": "2"
+    "reserved_gpu": "3"
   },
 
   "regression": {

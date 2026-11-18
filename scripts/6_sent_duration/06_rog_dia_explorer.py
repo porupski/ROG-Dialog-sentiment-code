@@ -65,6 +65,36 @@ print(f"5-10s: {((df['duration'] >= 5) & (df['duration'] < 10)).sum()}")
 print(f">10s: {(df['duration'] >= 10).sum()}")
 
 # %% [markdown]
+# ## Sentiment distribution by duration band
+#
+# The 2 s floor used by the fine-tune matrix drops ~78 % of ROG. Question: is the dropped
+# mass just neutral filler, or does the floor strip real negative/positive signal?
+#
+# 100 %-stacked bars → class composition inside each band (not absolute counts; totals are
+# shown on the x-axis labels). Also writes `docs/img/ROG-dia-v2_label_dist_by_duration.png`.
+
+# %%
+fig6, dist6 = u.plot_label_dist_by_duration_band(df, scheme='6')
+print('6-cls distribution by duration band:')
+print(dist6.pivot(index='band', columns='label', values='count'))
+print('\n% of each label captured in each band:')
+print(dist6.pivot(index='band', columns='label', values='pct_of_label_total'))
+out = ROOT / 'docs' / 'img' / 'ROG-dia-v2_label_dist_by_duration.png'
+fig6.savefig(out, dpi=150, bbox_inches='tight')
+print(f'\nwrote {out.relative_to(ROOT)}')
+
+# %%
+# 3-cls companion view — the version the matrix actually trains against.
+fig3, dist3 = u.plot_label_dist_by_duration_band(df, scheme='3')
+print('3-cls distribution by duration band:')
+print(dist3.pivot(index='band', columns='label', values='count'))
+print('\n% of each label captured in each band:')
+print(dist3.pivot(index='band', columns='label', values='pct_of_label_total'))
+out = ROOT / 'docs' / 'img' / 'ROG-dia-v2_label_dist_by_duration_3cls.png'
+fig3.savefig(out, dpi=150, bbox_inches='tight')
+print(f'\nwrote {out.relative_to(ROOT)}')
+
+# %% [markdown]
 # ## F1 topography — model performance across duration × WPS
 #
 # **This is the main view.** Each cell shows the macro-F1 (3-cls) the matrix achieves on ROG test instances falling in that `(duration bin, WPS bin)`. Bins are quantiles on the scored instances (= the matrix's 2 s-filtered test split, n=434). The default below is the **best-cell envelope** — per bin, the single matrix cell with the highest F1 is picked, and its name is shown. This mirrors what the duration-signal study does.
