@@ -166,6 +166,17 @@ def main():
     )
     print(f"\nMatrix done. Summary: {out_dir / 'matrix_summary.json'}")
 
+    # Auto-run analysis so the user doesn't have to remember the follow-up command.
+    # If analyze_finetune.py exits non-zero we just print; don't fail the matrix for it.
+    if not args.dry_run:
+        analyzer = ROOT / "scripts" / "analyze_finetune.py"
+        print(f"\nAuto-analyzing: python3 {analyzer.relative_to(ROOT)} {out_dir.relative_to(ROOT)}")
+        rc = subprocess.run([sys.executable, str(analyzer), str(out_dir)]).returncode
+        if rc != 0:
+            print(f"  [analyze_finetune] exit code {rc} — results on disk, rerun manually to inspect.")
+        else:
+            print(f"  [analyze_finetune] wrote {(out_dir / 'analysis').relative_to(ROOT)}/")
+
 
 if __name__ == "__main__":
     main()
