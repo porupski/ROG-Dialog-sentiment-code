@@ -582,8 +582,12 @@ def main():
             "device": device,
         }, ensure_ascii=False) + "\n")
 
-    print(f"\nDone. Batch: {batch_dir.relative_to(ROOT)}")
-    print(f"Analyze with: python3 scripts/analyze_results.py {batch_dir}")
+    try:
+        rel = batch_dir.relative_to(ROOT)
+    except ValueError:
+        rel = batch_dir
+    print(f"\nDone. Batch: {rel}")
+    print(f"Analyze with: python3 scripts/analyze_probe.py {rel}")
 
 
 if __name__ == "__main__":

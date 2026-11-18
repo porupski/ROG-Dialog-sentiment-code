@@ -507,6 +507,12 @@ def main():
     for r in results:
         print(f"  {r['run_id']}: parsed={r['n_parsed_ok']}/{r['n_instances']} "
               f"err={r['n_errors']} cost=${r['total_cost_usd']:.5f}")
+    try:
+        rel = batch_dir.relative_to(ROOT)
+    except ValueError:
+        rel = batch_dir
+    print(f"\nBatch: {rel}")
+    print(f"Analyze with: python3 scripts/analyze_probe.py {rel}")
 
 
 if __name__ == "__main__":

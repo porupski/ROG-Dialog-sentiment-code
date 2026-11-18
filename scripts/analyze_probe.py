@@ -383,6 +383,14 @@ def main():
     args = ap.parse_args()
 
     batch_dir = (Path(args.batch).resolve() if args.batch else latest_batch(RUNS_DIR))
+    if not batch_dir.exists():
+        # Spelling/tab-completion check: look for sibling folders with similar names so
+        # users don't silently see "0 runs found" after a typo (e.g. truncating a timestamp).
+        parent = batch_dir.parent
+        stem = batch_dir.name
+        close = [p.name for p in parent.iterdir() if p.is_dir() and p.name.startswith(stem[:min(len(stem), 24)])]
+        hint = (f"\n  Did you mean one of:\n    " + "\n    ".join(close[:5])) if close else ""
+        raise SystemExit(f"batch dir does not exist: {batch_dir}{hint}")
     try:
         rel = batch_dir.relative_to(ROOT)
     except ValueError:
