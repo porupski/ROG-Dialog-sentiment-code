@@ -21,6 +21,10 @@ h2 {
     font-size: 11.2pt; margin: 5mm 0 1.5mm 0;
     padding-bottom: 0.8mm; border-bottom: 1px solid #ddd; font-weight: 600;
 }
+.entry-date {
+    display: block; font-size: 8.4pt; color: #888; font-weight: 400;
+    margin: -0.4mm 0 2mm 0; letter-spacing: 0.02em;
+}
 h3 { font-size: 10.4pt; margin: 3mm 0 1mm 0; font-weight: 600; }
 
 p { margin: 1.5mm 0; }
@@ -200,6 +204,8 @@ img.figure {
     margin: 2mm auto 1mm auto;
     border: 1px solid #eee; border-radius: 1.5mm;
 }
+img.figure.small { max-width: 80%; }
+img.figure.tiny  { max-width: 66%; }
 figcaption {
     text-align: center; color: #666; font-size: 8.6pt;
     margin: 0 0 2mm 0;

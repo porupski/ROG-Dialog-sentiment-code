@@ -39,7 +39,7 @@ Backbone short names (`BACKBONES` in `utils_text_finetune.py`):
 
 ### 0.1 — iso baseline on full ROG test
 - **When**: 2026-11-18 (launched)
-- **Status**: RUNNING
+- **Status**: DONE
 - **Command**:
   ```
   python scripts/2_probe_text/02_run_openrouter_text.py \
@@ -52,17 +52,38 @@ Backbone short names (`BACKBONES` in `utils_text_finetune.py`):
 
 ### 0.2 — W=30 context on full ROG test (queue after 0.1 finishes)
 - **When**: 2026-11-18 (queued)
-- **Status**: TODO
+- **Status**: DONE (per Ivan 2026-11-18 evening)
 - **Command** (real — strip `--test --dry-run` from the smoke variant you ran earlier):
   ```
   python scripts/2_probe_text/03_run_openrouter_text_context.py \
       --models flash --shots 0shot --context-words 30 \
       --eval-set data/subset_rog_test_full.jsonl --eval-tag FULLROG
   ```
-- **Result dir**: `runs/batch_FULLROG_CTXW30_<stamp>/` (fill in)
+- **Result dir**: `runs/batch_FULLROG_CTXW30_<stamp>/` (remote; sync pending — numbers not in doc 2 yet)
 - **Analyze**: `python3 scripts/analyze_probe.py runs/batch_FULLROG_CTXW30_<stamp>`
 - **Lean copy**: `python3 scripts/sync_results.py runs/batch_FULLROG_CTXW30_<stamp> or_phase0/ctxw30`
 - **Post-land**: fill in Report 2 (`docs/2_open_router_probing_text.html` → the 2026-11-18 Progress section I added) with the full-ROG iso vs W=30 F1 numbers.
+
+### 0.3 — overnight context sweep (7 cells)
+- **When**: 2026-11-18 evening (queued)
+- **Status**: TODO (paste inside an open tmux pane at the repo root)
+- **Command** (one liner, paste into tmux on `ssp-cuda`):
+  ```
+  bash scripts/2_probe_text/run_fullrog_ctx_sweep.sh
+  ```
+  The wrapper runs seven cells sequentially (safer than parallel re: Flash rate limits):
+  - Flash 0shot **3cls** W=10 / W=20 / W=40  (W=30 already in `batch_FULLROG_CTXW30_20261118_165459`)
+  - Flash 0shot **6cls** W=10 / W=20 / W=30 / W=40  (full-sweep + prompt-sensitivity leg)
+- **Est. cost**: ~$17.2 (3cls leg ~$5.3, 6cls leg ~$11.9). Within $20 budget.
+- **Est. time**: ~15–16 h total sequential.
+- **Logs**: `runs/_sweep_logs/fullrog_ctx_<stamp>/{_master.log, <cell>.log}` — per-cell logs captured even on failure; master log for quick sanity check.
+- **Post-land**: fill in Report 2's queued rows + a 6cls F1 vs W curve; decide whether to run §0.4 (fshot) based on the 0shot peak.
+
+### 0.4 — fshot leg: 3cls+6cls iso + 3cls+6cls W=20 (decision after 0.3)
+- **When**: 2026-11-19 (pending 0.3 results)
+- **Status**: TODO
+- **Plan**: four fshot cells — `{3cls, 6cls} × {iso, W=20}` — to tell us whether few-shot stacks on context in the natural distribution. Est. cost ~$10 (one batch per cell; fshot roughly 1.5× the 0shot cost).
+- **Decision gate**: only run if 0.3 shows 0shot F1_3 > 0.60 at some W (so fshot has room to lift) AND no scheme sensitivity (so 6cls add is worth probing).
 
 ---
 

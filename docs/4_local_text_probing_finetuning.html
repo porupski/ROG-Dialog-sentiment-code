@@ -30,6 +30,26 @@ Three XLM-R backbones × seven data mixtures (parliament text, parliament speech
 <strong>Mixing all three sources (SPR) is the only path</strong> that holds positive R² on dialogue.
 </p>
 
+<details style="margin: 0.5em 0 1em 0;">
+<summary style="cursor: pointer; font-weight: 600;">Mixture alphabet &amp; backbone slugs — hit this if you forget what S/P/R mean</summary>
+<table style="margin-top: 0.5em;">
+  <thead><tr><th class="l">key</th><th class="l">sources</th><th class="l">meaning</th></tr></thead>
+  <tbody>
+    <tr><td class="l"><code>S</code></td><td class="l"><code>parlasent_sl</code></td><td class="l">parliament text, published 6-cls labels</td></tr>
+    <tr><td class="l"><code>P</code></td><td class="l"><code>parlaspeech_si</code></td><td class="l">parliament speech transcripts, XLM-R-ParlaSent self-labels (⚠ self-labelled on parlasent backbone)</td></tr>
+    <tr><td class="l"><code>R</code></td><td class="l"><code>rog_dia</code> (≥2 s)</td><td class="l">ROG dialogue, 2 s-filtered train split</td></tr>
+    <tr><td class="l"><code>SP</code>, <code>SR</code>, <code>PR</code>, <code>SPR</code></td><td class="l">unions of the above</td><td class="l">pairwise + triple on 2 s-filtered ROG</td></tr>
+    <tr><td class="l"><code>R_full</code></td><td class="l"><code>rog_dia_full</code></td><td class="l">ROG dialogue train, <strong>no</strong> 2 s filter (~10 k rows)</td></tr>
+    <tr><td class="l"><code>SR_full</code>, <code>PR_full</code>, <code>SPR_full</code></td><td class="l">unions with full-ROG</td><td class="l">same mixing, full-ROG train swapped in for R</td></tr>
+  </tbody>
+</table>
+<p style="font-size: 8.4pt; color: #666; margin-top: 0.5em;">
+Backbones: <code>xlm-roberta-large</code> (= <code>FacebookAI/xlm-roberta-large</code>, baseline, no sentiment pretrain) ·
+<code>xlm-r-parla</code> (= <code>classla/xlm-r-parla</code>, parliamentary MLM continue-pretrain, no sentiment head) ·
+<code>xlm-r-parlasent</code> (= <code>classla/xlm-r-parlasent</code>, parla + ParlaSent sentiment regression head).
+</p>
+</details>
+
 <table>
   <thead>
     <tr><th class="l">backbone</th><th>mixture</th><th>3-cls F1</th><th>6-cls F1</th><th>R²</th><th>note</th></tr>
@@ -52,7 +72,7 @@ Three XLM-R backbones × seven data mixtures (parliament text, parliament speech
 baseline predicts. <b>ParlaSent zero-shot</b> is the released <code>classla/xlm-r-parlasent</code> regression head applied
 to ROG with no further training — it beats majority by +0.19 F1_3, i.e. the parliamentary head already carries real
 sentiment signal into dialogue, but has R² = −0.73 because its output scale is calibrated for parliament, not for ROG's
-heavily-neutral distribution. <b>SPR</b> beats ParlaSent-ZS by +0.09 F1_3 and gets R² into the positives — that's where
+heavily-neutral distribution. <b>SPR</b> beats ParlaSent 0shot by +0.09 F1_3 and gets R² into the positives — that's where
 fine-tuning actually buys us performance. <b>IAA ceiling</b> uses <code>labels.sentiment_annotated</code> (the raw annotator)
 vs <code>labels.sentiment</code> (the curator) — 77.3 % of rows agree, so F1_3 ≈ 0.70 is the realistic upper bound on this
 gold. SPR has ~0.15 F1_3 of real headroom remaining before we would be overfitting curator noise.
@@ -80,7 +100,7 @@ Full numbers: <code>runs/baselines/baselines_rog_test_2s.md</code> · ceiling de
     <li><code>xlm-r-parlasent × SR_full</code> <em>gains</em> +0.062 F1_3 on ≥2 s test vs its
         2 s-trained twin — the one place full-ROG training genuinely helps.</li>
     <li>On the full test (including sub-2 s), the top full-trained cell lands at F1_3 = 0.474 —
-        only ~+0.05 above stock ParlaSent-ZS (0.421). Sub-2 s clips are inherently hard; training
+        only ~+0.05 above stock ParlaSent 0shot (0.421). Sub-2 s clips are inherently hard; training
         on them doesn't rescue them.</li>
   </ul>
   Full side-by-side: <code>misc/run_results/compare_2s_vs_full.md</code>. Before trusting PR_full
@@ -104,6 +124,115 @@ Full numbers: <code>runs/baselines/baselines_rog_test_2s.md</code> · ceiling de
 Matrix run: <code>misc/run_results/finetune_20261113_162724/</code> · rerun script:
 <code>scripts/4_finetune_text/run_matrix.py</code> · full-ROG launch:
 <code>run_matrix.py --mixtures R_full SR_full PR_full SPR_full --use_gpu</code>
+</footer>
+
+<h2>Progress — full-ROG mixing + collapse story</h2>
+<span class="entry-date">2026-11-18</span>
+
+<p class="finding">
+Nine fresh cells (S, R_full, SR_full × 3 backbones) on full-ROG (no 2 s filter). <strong>Non-sentiment backbones
+trained on R_full alone collapse to always-neutral</strong> (F1_3 ≈ 0.27 = majority baseline, recall_neu = 1.0,
+recall_neg/pos = 0). Only the ParlaSent head avoids the collapse. <strong>SR_full on parlasent is the best
+ParlaSent-SL retainer (F1_3 = 0.672)</strong>; <strong>R_full on parlasent is the best ROG scorer (F1_3 = 0.469)</strong>.
+Full ROG helps the <strong>parliament</strong> side of the model (regularizes the sentiment head) more than it lifts ROG.
+</p>
+
+<table>
+  <thead>
+    <tr><th class="l">backbone</th><th>mixture</th><th>ROG-full F1_3</th><th>ParlaSent-SL F1_3</th><th>note</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="l model">XLM-R-parlasent</td><td>R_full</td><td class="win">0.469</td><td class="good">0.513</td><td>best ROG; parlasent head holds up</td></tr>
+    <tr><td class="l model">XLM-R-parlasent</td><td>SR_full</td><td class="good">0.417</td><td class="win">0.672</td><td>best ParlaSent retention</td></tr>
+    <tr><td class="l model">XLM-R-parla</td><td>SR_full</td><td class="mid">0.373</td><td class="good">0.588</td><td>S rescues collapse</td></tr>
+    <tr><td class="l model">XLM-R-large</td><td>SR_full</td><td class="mid">0.332</td><td class="good">0.530</td><td>S rescues collapse</td></tr>
+    <tr><td class="l model">XLM-R-parlasent</td><td>S</td><td class="mid">0.409</td><td class="good">0.626</td><td>parliament-only (home)</td></tr>
+    <tr><td class="l model">XLM-R-large</td><td>S</td><td class="mid">0.402</td><td class="good">0.605</td><td>parliament-only (home)</td></tr>
+    <tr><td class="l model">XLM-R-parla</td><td>S</td><td class="mid">0.334</td><td class="good">0.626</td><td>parliament-only (home)</td></tr>
+    <tr class="warn"><td class="l model">XLM-R-large</td><td>R_full</td><td class="bad">0.276</td><td class="bad">0.235</td><td>collapsed → neutral</td></tr>
+    <tr class="warn"><td class="l model">XLM-R-parla</td><td>R_full</td><td class="bad">0.276</td><td class="bad">0.235</td><td>collapsed → neutral</td></tr>
+  </tbody>
+</table>
+<p style="font-size:8.4pt; color:#666; margin-top:0;"><em>Full ROG test n=2233 (natural ~72 % neutral); ParlaSent-SL test n=366. Run: <code>runs/finetune_20261118_132942/</code>.
+<strong>Takeaway:</strong> R_full solo kills non-sentiment backbones because ROG's neutral prior drowns the signal; the
+ParlaSent head's calibrated sentiment distribution is what keeps the model from degenerating. Adding S (SR_full) rescues
+the collapse but dilutes dialogue-side scores. <strong>Full-ROG is a regularizer for the parliament side, not a lift on ROG itself.</strong></em></p>
+
+<h2>Progress — context-windowed fine-tune (the Flash-ctx analogue)</h2>
+<span class="entry-date">2026-11-18</span>
+
+<p class="finding">
+3 backbones × 3 context widths (W ∈ {10, 20, 30}) × R_full (ROG-only train, no self-labels). Nine cells, overnight.
+<strong>Opposite result from Flash:</strong> adding context <strong>hurts</strong> local fine-tune on every backbone.
+A sliver of context (W=10) rescues the non-sentiment backbones from the majority-neutral collapse (+0.07–0.09 F1_3 vs iso),
+but by W=20 the collapse is back; parlasent is roughly flat across W (0.45 ± 0.01) but never beats its own iso cell (0.469).
+<strong>OR Flash iso on the same n=2233 slice still wins at F1_3 = 0.546</strong> (see Report 2).
+</p>
+
+<table>
+  <thead>
+    <tr><th class="l">backbone</th><th>W</th><th>ROG-full F1_3</th><th>ROG-full F1_6</th><th>ROG-full ρ</th><th>pos recall</th><th>note</th></tr>
+  </thead>
+  <tbody>
+    <tr class="baseline"><td class="l model">XLM-R-large</td><td>iso (ref)</td><td>0.276</td><td>0.126</td><td>—</td><td>0.00</td><td>majority-collapse</td></tr>
+    <tr><td class="l model">XLM-R-large</td><td>W=10</td><td class="mid">0.347</td><td class="meh">0.177</td><td>0.206</td><td class="meh">0.061</td><td>sliver-rescue</td></tr>
+    <tr class="warn"><td class="l model">XLM-R-large</td><td>W=20</td><td class="bad">0.290</td><td class="bad">0.115</td><td>0.165</td><td class="bad">0.015</td><td>re-collapsing</td></tr>
+    <tr class="warn"><td class="l model">XLM-R-large</td><td>W=30</td><td class="bad">0.276</td><td class="bad">0.138</td><td>0.136</td><td class="bad">0.000</td><td>full collapse</td></tr>
+    <tr class="baseline"><td class="l model">XLM-R-parla</td><td>iso (ref)</td><td>0.276</td><td>0.126</td><td>—</td><td>0.00</td><td>majority-collapse</td></tr>
+    <tr><td class="l model">XLM-R-parla</td><td>W=10</td><td class="mid">0.368</td><td class="meh">0.175</td><td>0.202</td><td class="meh">0.108</td><td>sliver-rescue (best of the three)</td></tr>
+    <tr><td class="l model">XLM-R-parla</td><td>W=20</td><td class="mid">0.346</td><td class="meh">0.166</td><td>0.216</td><td class="meh">0.064</td><td>fading</td></tr>
+    <tr class="warn"><td class="l model">XLM-R-parla</td><td>W=30</td><td class="bad">0.320</td><td class="bad">0.128</td><td>0.193</td><td class="bad">0.012</td><td>re-collapsing</td></tr>
+    <tr class="baseline"><td class="l model">XLM-R-parlasent</td><td>iso (ref)</td><td class="win">0.469</td><td class="good">0.238</td><td>—</td><td>0.15</td><td>best overall cell</td></tr>
+    <tr><td class="l model">XLM-R-parlasent</td><td>W=10</td><td class="good">0.453</td><td class="good">0.238</td><td>0.238</td><td class="good">0.274</td><td>flat vs iso</td></tr>
+    <tr><td class="l model">XLM-R-parlasent</td><td>W=20</td><td class="good">0.438</td><td class="good">0.214</td><td>0.214</td><td class="good">0.312</td><td>flat vs iso</td></tr>
+    <tr><td class="l model">XLM-R-parlasent</td><td>W=30</td><td class="good">0.445</td><td class="good">0.218</td><td>0.236</td><td class="good">0.385</td><td>flat vs iso; best pos recall</td></tr>
+    <tr class="baseline"><td class="l">(reference) OR Flash iso FULLROG</td><td>—</td><td>0.546</td><td>0.281</td><td>0.353</td><td>—</td><td>Report 2</td></tr>
+  </tbody>
+</table>
+<p style="font-size:8.4pt; color:#666; margin-top:0;"><em>All rows: mixture = <code>R_full</code> (ROG only, no S/P, no self-labels), train n=10,544, eval on
+rog_dia_full (n=2233, natural distribution ~72 % neutral). iso rows carried over from the 2026-11-18 collapse-story matrix
+(<code>runs/finetune_20261118_132942/</code>). W rows from overnight matrix. <strong>Reads of the shape:</strong>
+(a) a short context window (W=10) is enough to break the always-neutral collapse on non-sentiment backbones — the target marker
+plus a few words of neighbour chat gives the model somewhere to put signal; (b) longer windows re-bury the signal because
+with only ~10 k R_full training rows the model never learns to focus on <code>[TARGET]</code> amid 30 words of mostly-neutral
+chatter; (c) the parlasent head's pre-existing sentiment calibration makes it insensitive to W — it already knows where to
+look. <strong>Context is a tool for pretrained giants, not for small-head fine-tunes on small data.</strong> Pos recall climbs
+with W on parlasent (0.15 → 0.39) because the extra context slightly nudges it off neutral — but at a macro-F1 cost.
+Run: <code>runs/from_remote/Full_ROG_dia-v2_XLM_test/finetune_20261118_160746/</code>. Build script: <code>scripts/1_data_prep/prep_rog_context.py</code>.
+Train script: <code>scripts/4_finetune_text/run_matrix.py --mixtures R_full_ctxw{10,20,30}</code>.</em></p>
+
+<p style="margin: 3mm 0 1mm 0;"><strong>Context envelope — F1 vs (W, target feature) for the best local cell (xlm-r-parlasent × R_full).</strong>
+Same code shape as the Flash envelope in Report 2, on the same n=2233 rows. Baseline plane = published iso F1_3 = 0.469 (the W=0 cell isn't
+in this batch — lives in <code>runs/finetune_20261118_132942/</code>; if you sync those predictions, the renderer will overlay a
+proper W=-1 row). Duration axis skipped (words covers absolute length, wps covers rate).</p>
+
+<img class="figure small" src="img/ctx_envelope_parlasent_R_full_words_FULLROG.png"
+     alt="XLM-R-parlasent × R_full F1_3 (FULLROG n=2233) across context W × target word count">
+<figcaption>XLM-R-parlasent × R_full · FULLROG · x=context W · y=target word count · z=F1_3. iso scalar = 0.469.
+<strong>Peak = 0.563 at W=10, 6+ words.</strong> Context only lifts above the iso baseline at long targets; at 1-word targets
+every W is <em>below</em> iso (0.29–0.33 vs 0.47). Monotone in word count at every W. Compare to Flash at the same slice
+(words × W envelope in Report 2) where peak = 0.728 at W=10, long targets — <strong>parlasent is ~−0.17 F1_3 behind Flash</strong>
+at the same configuration.</figcaption>
+
+<img class="figure small" src="img/ctx_envelope_parlasent_R_full_wps_FULLROG.png"
+     alt="XLM-R-parlasent × R_full F1_3 (FULLROG n=2233) across context W × target WPS">
+<figcaption>XLM-R-parlasent × R_full · FULLROG · x=context W · y=target WPS (words/s, clipped at 10) · z=F1_3. iso scalar = 0.469.
+<strong>Peak = 0.489 at W=10, high-WPS bin (3.19–4.07 w/s)</strong>, barely +0.02 above iso. The entire surface is near-flat and
+below iso at most cells — parlasent genuinely does <em>not</em> benefit from context on this axis. Compare Flash WPS envelope
+(peak 0.656 at W=40 mid-WPS, +0.12 above iso) — <strong>parlasent is ~−0.17 F1_3 behind Flash on the mid-WPS peak too</strong>.</figcaption>
+
+<div class="init-concl neg">
+<strong>INITIAL CONCLUSION:</strong> Context does <strong>not</strong> help the local fine-tune the way it helps Flash. Best local cell
+(parlasent × R_full iso = 0.469) trails Flash W=40 FULLROG (0.621, Report 2) by <strong>−0.15 F1_3</strong>. The envelope confirms
+the gap is structural: parlasent only lifts at long targets, and only slightly. <strong>Next lever is training-data scale and mixing</strong>
+(bring S + P back in, cap per-source, rerun full matrix), not context width.
+</div>
+
+<footer>
+Matrix runs: <code>runs/finetune_20261118_132942/</code> (first round, iso) · <code>runs/from_remote/Full_ROG_dia-v2_XLM_test/finetune_20261118_160746/</code> (ctx matrix).
+Rerun script: <code>scripts/4_finetune_text/run_matrix.py</code>. Context prep:
+<code>scripts/1_data_prep/prep_rog_context.py</code>. Envelope render:
+<code>scripts/6_sent_duration/render_parlasent_ctx_envelope_fullrog.py</code>. Commands tracker: <code>COMMANDS.md</code> §3.3.
 </footer>
 
 </body>
