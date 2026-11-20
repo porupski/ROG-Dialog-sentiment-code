@@ -193,3 +193,133 @@ matrix (R SR PR_full SPR_full) is parked; can be re-queued later.
 ### A.2 — Dev-log entry
 - **Status**: TODO (defer until Phase 0 OR lands + Phase 3.2 matrix finishes)
 - Target: `results_docs/development_log.md`, 2026-11-18 entry.
+
+---
+
+## Phase 4 — audio fine-tune matrix (SSP chapter 4)
+
+Audio side of the matrix. Engine lives in the sibling repo
+`slavic-speech-pipeline/4_instance_models/` and is invoked through
+`43_run_task_list.py` (sequential queue; per-task output dirs under
+`runs/<list_dir>/<task_label>/`; aggregate CSV + PNG at the list root).
+
+**Two SSP files changed for Phase 4.1** (both need to land on the remote
+machine before launch):
+
+- `slavic-speech-pipeline/4_instance_models/utils_instance_train.py` — the four
+  `rog_dia_*` TARGETS entries now point at `data/processed_jsonl/rog_dialog_v2_instance.jsonl`
+  (the v2 file that's already present in SSP; the former `rog_dialog_instance.jsonl`
+  path was stale and did not exist on disk).
+- `slavic-speech-pipeline/4_instance_models/43_run_task_list.py` — TASKS list
+  swapped for three iso audio-sentiment benchmarks on `rog_dia_sentiment_3`.
+  Previous TASKS list (sentiment3 + DA dimension/function cells) is preserved
+  as a commented block for future rerun.
+
+### 4.1 — iso benchmarks on `rog_dia_full` (three backbones)
+
+Three backbones × ROG-Dialog v2 full train/dev/test × no context window.
+Train recipe: SSP default (`freeze_feature_encoder=true`, encoder trainable,
+head from scratch), 10 epochs, backbone-matched LR. This is the first table at
+the top of Report 5 (`docs/5_local_audio_probing_finetuning.html`).
+
+- **When**: 2026-11-20 (queued)
+- **Status**: TODO
+- **Prep** (on the remote host, in the `ssp-cuda` conda env, from the SSP
+  repo root):
+  ```
+  mamba activate ssp-cuda
+  cd 4_instance_models
+
+  # Sanity-check target wiring + split sizes before committing to a 2–4 h run:
+  python -c "
+  import utils_instance_train as uit
+  from utils_instance_train import TARGETS, load_split
+  t = TARGETS['rog_dia_sentiment_3']
+  print(t['jsonl_path'])
+  for sp in ('train', 'dev', 'test'):
+      n = len(load_split(t['jsonl_path'], sp, t['label_key'], 15.0,
+                        label_remap=t.get('label_remap')))
+      print(f'  {sp}: {n}')
+  "
+  # Expected: ~11.1k train, ~0.6k dev, 2233 test (ROG-Dialog v2 unfiltered).
+  ```
+- **Launch** (in tmux on the remote host; GPU id read from
+  `4_instance_models/4_config.json → shared.reserved_gpu`, edit there if the
+  reserved GPU on the target cluster is not 2):
+  ```
+  tmux new -s audio_iso
+  cd 4_instance_models
+  python 43_run_task_list.py \
+      --mode full --use_gpu \
+      --list_dir senthunt_audio_iso_v1 \
+      2>&1 | tee ../runs/43_senthunt_audio_iso_$(date +%Y-%m-%d_%H%M%S).log
+  ```
+  Dry-run first if you want to confirm the planned tasks:
+  ```
+  python 43_run_task_list.py --mode full --dry_run
+  ```
+- **Tasks** (3 cells, sequential):
+  | label                           | model                          | lr    |
+  |---------------------------------|--------------------------------|-------|
+  | `iso_w2v2-base_rog_dia_full`    | `facebook/wav2vec2-base`       | 1e-5  |
+  | `iso_xls-r-300m_rog_dia_full`   | `facebook/wav2vec2-xls-r-300m` | 3e-5  |
+  | `iso_w2v-bert-2_rog_dia_full`   | `facebook/w2v-bert-2.0`        | 3e-5  |
+- **Est. time**: ~2–4 h total (base ~30 min, XLS-R-300M ~1 h, w2v-BERT 2.0 ~1.5 h,
+  single reserved GPU). Base config has `max_duration_s=15.0 s` which covers
+  ROG-Dialog v2's 12.3 s max.
+- **Result dir**: `slavic-speech-pipeline/runs/senthunt_audio_iso_v1/`
+  with `task_list_summary.csv` + per-task subdirs.
+- **Lean copy**: `python3 scripts/sync_results.py <ssp_runs_dir> audio_iso/v1`
+  (adapt or write a thin wrapper if `sync_results.py` is Sentiment_Search-specific).
+- **Post-land**: Render a 3-row table + a 2-cell panel (3-class confusion
+  heatmaps) at the top of Report 5. Target metric: macro-F1_3 on TEST.
+  Target to beat: **0.469** (XLM-R-parlasent × R_full iso text-side lift,
+  Report 4). If any audio backbone exceeds this, we've shown a modality lift.
+
+### 4.2 — train-set ablation (rog_dia 2s-filtered, ParlaSpeech-SI matched)
+
+**Status**: BLOCKED on open questions below. Rough shape: for each backbone
+that cleared 4.1, run two additional train-set variants:
+- `rog_dia` (≥ 2 s-filtered ROG train, same test set)
+- `parlaspeech_si` resampled to mimic rog_dia_full's duration + WPS distribution
+
+Then re-eval on both `rog_dia_full` test and `parlaspeech_si` test matched to
+`rog_dia_full` test.
+
+**Open questions** (need Ivan's input before plumbing):
+
+1. SSP's `data/processed_jsonl/` has no `parlaspeech_v4_si_utterance_instance.jsonl`
+   and `data/processed_audio/` holds ROG-Dialog-v2 only. Where does the
+   ParlaSpeech-SI audio + utterance JSONL live on the remote host, and should
+   we symlink from there or run SSP's chapter-1 prep on-remote first?
+2. "Matched to full ROG" resampling policy — marginal duration only, joint
+   `(duration, WPS)` stratified binning, or something else?
+3. The existing `rog_dia_sentiment_3` TARGETS entry is unfiltered. For a
+   2 s-train / full-test cell we need either (a) a new TARGETS entry with
+   `min_duration_s: 2.0` that only applies at train time, or (b) a split-level
+   filter knob in `load_split`. (a) breaks test eval (would drop <2 s rows);
+   (b) is a chapter-4 feature extension. Suggest (b) — call it
+   `train_min_duration_s` on the Config dataclass.
+
+### 4.3 — context-window sweep (W ∈ {10, 20, 30, 40})
+
+**Status**: DESIGN PENDING. The handover notes two plausible implementations:
+- (A) Concatenate neighbor-clip audio into the input waveform.
+- (B) Pass the window transcript as a text side-channel.
+
+SSP's chapter-4 trainer accepts audio only, so (A) is the native path but
+raises its own questions (concat only trailing context? bidirectional? gap
+handling?). (B) would need a new model class (dual encoder + fusion head).
+
+Defer until 4.1 lands and we have a reference F1 to lift above.
+
+### 4.R — Render audio envelope plots
+- **Status**: TODO (post-4.3)
+- Mirror of Report 2's Flash envelopes:
+  - `scripts/6_sent_duration/render_audio_ctx_envelopes_fullrog.py` (new;
+    copy from `render_ctx_envelopes_fullrog.py`, swap data source to the audio
+    matrix outputs).
+  - Red-green diverging cmap anchored at the iso baseline (per memory
+    `feedback-plotting-conventions`). Duration axis is in scope for Report 5
+    (unlike text-side reports).
+  - Output: `docs/img/ctx_envelope_<backbone>_<train>_<axis>_FULLROG.png`.

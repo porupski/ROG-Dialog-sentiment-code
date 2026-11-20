@@ -210,3 +210,29 @@ figcaption {
     text-align: center; color: #666; font-size: 8.6pt;
     margin: 0 0 2mm 0;
 }
+
+/* Side-by-side figure pair: two 3-D envelopes placed next to each other. */
+.fig-pair {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 4mm;
+    margin: 2mm 0 2mm 0;
+}
+.fig-pair figure { margin: 0; }
+.fig-pair img.figure { width: 100%; max-width: 100%; margin: 0 auto 1mm auto; }
+.fig-pair figcaption { text-align: left; }
+
+/* Narrative paragraph under a table — regular text (not the gray metadata style)
+   for interpretations/conclusions that previously got buried in the italic caption. */
+p.narrative { font-size: 10pt; margin: 2mm 0 3mm 0; }
+p.narrative strong { color: #0a2e1c; }
+
+/* Table caption: short, visible, above the table — used to introduce what the table shows. */
+p.table-cap { font-size: 10pt; font-weight: 600; margin: 3mm 0 1mm 0; }
+
+/* Backbone-family separator row in the local-text matrix table. */
+tr.family-gap td { border-top: 2.5mm solid transparent; padding: 0; height: 2.5mm; }
+
+/* Bibliography block at the bottom of each report. */
+section.bib { margin-top: 6mm; padding-top: 2mm; border-top: 1px dashed #bbb; }
+section.bib h2 { font-size: 11pt; margin: 0 0 1.5mm 0; }
+section.bib ol { font-size: 9pt; margin: 0 0 0 4mm; padding: 0; }
+section.bib ol li { margin-bottom: 1.2mm; }

@@ -7,58 +7,77 @@
 </head>
 <body>
 
-<h1>Sentiment Search — ROG-Dialog v2
-  <span class="sub">Where does the sentiment signal live in short Slovenian dialogue?
-  Six reports: datasets, two API probes, two local probes, a duration study.</span>
+<h1>The hunt for the Slovenian sentiment signal
+  <span class="sub">Where does it hide in short spoken dialogue — in the text, or in the audio?
+  Six reports: datasets, two API probes, two local fine-tune tracks, a duration study.</span>
 </h1>
 
-<p>Ivan Porupski — Jožef Stefan Institute. Reports are static HTML, hosted on GitHub
-Pages. Numbers come from the matrix run at
-<code>misc/run_results/finetune_20261113_162724/</code> plus the OpenRouter batches
-in <code>runs/</code>; pipeline code is in <code>scripts/</code>.</p>
+<p>Ivan Porupski — Jožef Stefan Institute. Reports are static HTML, hosted on GitHub Pages.
+Numbers come from the finetune matrices under <code>runs/from_remote/</code> and the
+OpenRouter batches under <code>runs/</code>; pipeline code is in <code>scripts/</code>.
+See the references at the bottom of each report for cited work.</p>
+
+<h2>Where the signal sits right now — floor, ceiling, current best</h2>
+
+<div class="init-concl">
+<p style="margin:0 0 1.5mm 0;"><strong>Target gold is 3-class macro-F1 on ROG-Dialog v2 (Slovenian spoken dialogue, ~72 % neutral prior).</strong></p>
+<table style="margin: 0 0 1mm 0;">
+  <thead><tr><th class="l">anchor</th><th>F1_3</th><th>n</th><th>what it is</th></tr></thead>
+  <tbody>
+    <tr><td class="l">floor — majority-class</td><td>0.278</td><td>2233</td><td>predict "neutral" always; F1 = 0.28 across every duration band (Report 6)</td></tr>
+    <tr><td class="l">ParlaSent 0shot (stock)</td><td>0.457</td><td>434</td><td>the released <code>classla/xlm-r-parlasent</code> head applied to ROG without fine-tune</td></tr>
+    <tr><td class="l">best local text fine-tune</td><td class="good">0.469</td><td>2233</td><td><code>xlm-r-parlasent × R_full</code> iso (Report 4)</td></tr>
+    <tr><td class="l">best LLM on text</td><td class="win">0.621</td><td>2233</td><td>Flash 0shot W=40 FULLROG, context sweep peak (Report 2)</td></tr>
+    <tr><td class="l">ceiling — IAA (annotator ↔ curator)</td><td>0.699</td><td>170</td><td>human noise floor; Flash long-target slice already breaks this at 0.728</td></tr>
+  </tbody>
+</table>
+<p style="margin:0;"><strong>Gap to close:</strong> local fine-tune is 0.15 F1_3 behind the LLM; the LLM is 0.08 F1_3 below the IAA ceiling. Next frontier = <strong>audio</strong>.</p>
+</div>
 
 <div class="report-list">
 
   <a class="r-card" href="1_rog_dia_v2_data_overview.html">
     <div><span class="r-num">1.</span><span class="r-title">ROG-Dialog v2 — data overview</span>
       <span class="r-tag active">current</span></div>
-    <div class="r-gloss">The three Slovenian corpora in play (ROG-Dialog v2, ParlaSpeech-SI, ParlaSent-SL).
-      Modality, splits, label priors, duration and speech-rate stats. Read this first.</div>
+    <div class="r-gloss">Three Slovenian corpora: ROG-Dialog v2 (13.7 k short dialogue utterances), ParlaSpeech-SI (918 k parliamentary speech transcripts),
+      ParlaSent-SL (2.6 k parliamentary text). Modality, splits, label priors, duration + WPS distributions. Read first.</div>
   </a>
 
   <a class="r-card" href="2_open_router_probing_text.html">
     <div><span class="r-num">2.</span><span class="r-title">OpenRouter — text probing</span>
-      <span class="r-tag chopblock">on the chopping board</span></div>
-    <div class="r-gloss">Gemini Flash and Claude Haiku on ROG transcripts, zero-shot and few-shot,
-      3-class and 6-class. Baselines included. Will be re-run with full ROG once that matrix is in.</div>
+      <span class="r-tag active">current</span></div>
+    <div class="r-gloss">Flash / Haiku / GPT-{4o,5,5.6-luna} on ROG transcripts.
+      <strong>Flash 0shot W=40 FULLROG = 0.621 F1_3</strong>; 6-cls peaks at W=10 then plateaus;
+      3-cls-native beats 6-cls-collapsed by +0.13 at W=40. Context envelope maps over words × W and WPS × W.</div>
   </a>
 
   <a class="r-card" href="3_open_router_probing_audio.html">
     <div><span class="r-num">3.</span><span class="r-title">OpenRouter — audio probing</span>
       <span class="r-tag shelved">shelved</span></div>
-    <div class="r-gloss">Gemini Flash and Gemini Carbon on raw ROG audio. Zero-shot hits text-ceiling;
-      few-shot destroys the audio prompt. Kept for reference; not the deliverable path.</div>
+    <div class="r-gloss">Gemini Flash and Carbon on raw ROG audio, 170-subset. 0shot matches text; few-shot destroys the audio prompt.
+      Kept for reference; the audio deliverable goes through local fine-tune (Report 5).</div>
   </a>
 
   <a class="r-card" href="4_local_text_probing_finetuning.html">
     <div><span class="r-num">4.</span><span class="r-title">Local — text fine-tuning</span>
       <span class="r-tag active">current</span></div>
-    <div class="r-gloss">3 XLM-R backbones × 7 training mixtures regression matrix. Parliament → dialogue
-      transfer broken; SPR mixture holds up. Baselines + per-cell numbers.</div>
+    <div class="r-gloss">3 XLM-R backbones × training mixtures from S/P/R.
+      <strong>Best cell: xlm-r-parlasent × R_full iso = 0.469 F1_3</strong> on rog-full test.
+      Context HURTS local fine-tunes (opposite of Flash) on this training-data scale — scale + mix is the next lever.</div>
   </a>
 
   <a class="r-card" href="5_local_audio_probing_finetuning.html">
     <div><span class="r-num">5.</span><span class="r-title">Local — audio fine-tuning</span>
-      <span class="r-tag placeholder">placeholder</span></div>
-    <div class="r-gloss">The final-stretch deliverable: a transformer speech-sentiment regressor for
-      SL dialogue. Nothing on the board yet.</div>
+      <span class="r-tag placeholder">up next</span></div>
+    <div class="r-gloss">The last unexplored axis. Plan: three audio backbones iso, then fine-tune on rog_2s / rog_full /
+      parlaspeech-matched-to-rog, eval on rog-full + parlaspeech-matched, then redo the context sweep for audio. Target: beat the 0.469 text ceiling.</div>
   </a>
 
   <a class="r-card" href="6_sentiment_signal_in_duration.html">
     <div><span class="r-num">6.</span><span class="r-title">Sentiment signal across duration</span>
-      <span class="r-tag chopblock">on the chopping board</span></div>
-    <div class="r-gloss">ROG F1 climbs with clip length then plateaus at ~0.65; ParlaSpeech stays
-      flat near 0.9 across all lengths. Domain gap, not length. Being redone on full-ROG.</div>
+      <span class="r-tag active">current</span></div>
+    <div class="r-gloss">Full-ROG rebin: Flash 0.42 → 0.77 F1_3 from sub-1 s to 4–8 s; context lifts the sub-1 s floor by +0.09.
+      <strong>Proportional-duration hypothesis ruled out</strong> — at matched 4–8 s the ROG-vs-parliament gap is domain, not length.</div>
   </a>
 
 </div>
@@ -130,10 +149,56 @@ Audio rows: Flash + Carbon on the 170-subset, shelved after few-shot destroyed t
 "Luna 0-shot" = <code>openai/gpt-5.6-luna</code>; "Carbon" = Gemini Carbon 4 (audio-native frontier tier).
 <sup>★</sup> = the pragmatic peak of the current OR context sweep (W ∈ {0, 10, 20, 30, 50}); see Report 2.</em></p>
 
+<h2>What we think works — recipes so far</h2>
+
+<div class="init-concl" style="background:#eef3ff; border-left-color:#3a60c0;">
+  <p style="margin:0 0 1.5mm 0;"><strong>Text recipe (production-plausible).</strong></p>
+  <ol style="margin:0 0 0 4mm;">
+    <li><strong>LLM route (best F1, low ops).</strong> Flash 0shot 3-cls, context window W ∈ [20, 40] words per side, same prompt as Report 2's verbatim block.
+      F1_3 ≈ 0.62 on rog-full. Cheap ($~2 per 2233-instance eval). <strong>Do not</strong> run 6-cls and collapse — scheme sensitivity loses 0.13 F1 (Report 2).</li>
+    <li><strong>Local route (ops-friendly, if LLM API is off the table).</strong>
+      <code>xlm-r-parlasent × R_full</code> iso, no context augmentation (context hurts — Report 4).
+      F1_3 ≈ 0.47 on rog-full. Open gaps: training-data scale, uncapped per-source mixing.</li>
+    <li><strong>Duration note.</strong> Do not filter sub-2 s clips from training. They are 81 % of test and matter.
+      Context compensates for sub-1 s floor (+0.09 F1 from iso to W=40 on Flash sub-1 s band — Report 6).</li>
+  </ol>
+</div>
+
+<div class="init-concl" style="background:#f0e6fa; border-left-color:#7a4bc2;">
+  <p style="margin:0 0 1.5mm 0;"><strong>Audio recipe (open — work in progress).</strong></p>
+  <ol style="margin:0 0 0 4mm;">
+    <li><strong>Iso benchmarks</strong> on three audio backbones (wav2vec-family / WavLM / Whisper-encoder + head per Report 5 plan).</li>
+    <li><strong>Train sweeps:</strong> rog_2s, rog_full, parlaspeech-matched-to-rog (resampled to mimic ROG duration + WPS). Eval on rog-full and parlaspeech-matched-to-rog.</li>
+    <li><strong>Then context sweep</strong> W ∈ {10, 20, 30, 40} — the audio analogue of Report 2's Flash context sweep.</li>
+    <li><strong>Target:</strong> beat the 0.469 local text ceiling on rog-full. A genuine modality lift + a working context story would be the deliverables.</li>
+  </ol>
+  <p style="margin:1.5mm 0 0 0;">See <code>misc/2026-11-19_prompt_prep4.md</code> for the full audio-track handover.</p>
+</div>
+
 <h2>Legacy</h2>
 <p>The original monolith report lives at
 <a href="legacy/report_sentiment_signal_hunt.html">legacy/report_sentiment_signal_hunt.html</a>.
 It is superseded by reports 1 – 6 above; kept for diff / review only.</p>
+
+<section class="bib">
+  <h2>References</h2>
+  <ol>
+    <li id="bib-parlasent">Mochtak, M., Rupnik, P., Ljubešić, N. (2024).
+      <em>The ParlaSent Multilingual Training Dataset for Sentiment Identification in Parliamentary Proceedings.</em>
+      LREC-COLING 2024. <a href="https://arxiv.org/abs/2309.09783">arXiv:2309.09783</a>.
+      Source of the <code>S</code> training set and the <code>classla/xlm-r-parlasent</code> head.</li>
+    <li id="bib-parlaspeech">Ljubešić, N., Rupnik, P. et al. (2024).
+      <em>ParlaSpeech: Automatic generation of parliamentary speech corpora.</em>
+      <a href="http://hdl.handle.net/11356/1834"><code>ParlaSpeech-SI</code></a>.
+      Source of the <code>P</code> training mixture and the long-prepared-speech reference domain in Report 6.</li>
+    <li id="bib-xlmr">Conneau, A. et al. (2020).
+      <em>Unsupervised Cross-lingual Representation Learning at Scale.</em>
+      ACL 2020. <a href="https://arxiv.org/abs/1911.02116">arXiv:1911.02116</a>.</li>
+    <li id="bib-wav2vec">Baevski, A., Zhou, Y., Mohamed, A., Auli, M. (2020).
+      <em>wav2vec 2.0: A Framework for Self-Supervised Learning of Speech Representations.</em>
+      NeurIPS 2020. <a href="https://arxiv.org/abs/2006.11477">arXiv:2006.11477</a>. Candidate audio backbone for Report 5.</li>
+  </ol>
+</section>
 
 <footer>
 Code: <code>github.com/porupski/Sentiment_Search</code>

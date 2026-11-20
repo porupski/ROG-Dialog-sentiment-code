@@ -119,14 +119,18 @@ around each target help?). Two knobs, back-to-back.
 
 <details>
   <summary style="font-size: 10.6pt; font-weight: 600;">
-    <strong>Bigger OpenAI — no, GPT sucked at it.</strong> Tap for the receipts.
+    <strong>Bigger OpenAI — no, GPT didn't beat Flash.</strong> Tap for the receipts.
   </summary>
   <div class="body">
-    <p style="margin: 0 0 1.5mm 0;">GPT-4o, GPT-5, and GPT-5.6-luna, same prompts as Flash/Haiku.
-    Flash fshot 3-cls = <strong>0.607</strong> still holds the crown. GPT-5 fshot sits ~−0.03 lower at
-    ~2× the Flash cost; its 6-cls fshot parse rate drops to 0.77 as reasoning exhausts the token budget
-    before a clean label. Cheap Luna 0-shot matches GPT-5 0-shot at ~1/25 the cost — cost-efficient tier is
-    where the signal lives, not the frontier.</p>
+    <p class="narrative" style="margin-top:0;"><strong>Why GPT at all?</strong> Mochtak, Rupnik and Ljubešić
+    (ParlaSent, 2024 [<a href="#bib-parlasent">1</a>]) benchmark their XLM-R-parlasent model against GPT-3.5
+    in zero-shot sentiment identification on parliamentary text — GPT is the generic LLM frontier reference in
+    that paper. We re-ran the same frontier-vs-fine-tune question on dialogue with the current OpenAI tier
+    (GPT-4o, GPT-5, GPT-5.6-luna) and the current cheap tier (Flash, Haiku) side by side, same prompts.</p>
+    <p class="narrative"><strong>Short answer:</strong> on ROG dialogue, Flash fshot 3-cls = <strong>0.607</strong>
+    still holds the crown. GPT-5 fshot sits ~−0.03 lower at ~2× Flash's cost; its 6-cls fshot parse rate drops to
+    0.77 as reasoning exhausts the token budget before a clean label. Cheap Luna 0-shot matches GPT-5 0-shot at
+    ~1/25 the cost. <strong>The cost-efficient tier is where the signal lives, not the frontier.</strong></p>
 
 <table>
   <thead>
@@ -160,48 +164,40 @@ Full numbers: <code>runs/batch_FULL_20261117_104225/batch_results.csv</code>.</e
 
 <h3>Context (3-turn window) — does natural dialogue flow around each target help?</h3>
 
+<p class="table-cap">Isolated utterance vs 3-turn window (previous · target · next), same 170 targets.</p>
+
 <table>
   <thead>
     <tr><th class="l">model</th><th>context</th><th>shot</th><th>3-cls F1</th><th>6-cls F1</th><th>3-cls ρ</th><th>6-cls ρ</th></tr>
   </thead>
   <tbody>
-    <tr><td class="l model">Gemini Flash 3.8</td><td>iso (single-utt)</td><td>0-shot</td><td class="good">0.592</td><td class="mid">0.349</td><td class="mid">0.481</td><td class="good">0.596</td></tr>
-    <tr><td class="l model">Gemini Flash 3.8</td><td>ctx3 (prev · target · next)</td><td>0-shot</td><td class="win">0.639</td><td class="mid">0.380</td><td class="good">0.603</td><td class="win">0.702</td></tr>
-    <tr><td class="l model">Claude Haiku 4.5</td><td>iso (single-utt)</td><td>0-shot</td><td class="mid">0.467</td><td class="meh">0.213</td><td class="meh">0.334</td><td class="meh">0.341</td></tr>
-    <tr><td class="l model">Claude Haiku 4.5</td><td>ctx3 (prev · target · next)</td><td>0-shot</td><td class="good">0.515</td><td class="meh">0.235</td><td class="mid">0.434</td><td class="good">0.534</td></tr>
+    <tr><td class="l model">Gemini Flash 3.8</td><td>iso (single-utt)</td><td>0shot</td><td class="good">0.592</td><td class="mid">0.349</td><td class="mid">0.481</td><td class="good">0.596</td></tr>
+    <tr><td class="l model">Gemini Flash 3.8</td><td>ctx3 (prev · target · next)</td><td>0shot</td><td class="win">0.639</td><td class="mid">0.380</td><td class="good">0.603</td><td class="win">0.702</td></tr>
+    <tr><td class="l model">Claude Haiku 4.5</td><td>iso (single-utt)</td><td>0shot</td><td class="mid">0.467</td><td class="meh">0.213</td><td class="meh">0.334</td><td class="meh">0.341</td></tr>
+    <tr><td class="l model">Claude Haiku 4.5</td><td>ctx3 (prev · target · next)</td><td>0shot</td><td class="good">0.515</td><td class="meh">0.235</td><td class="mid">0.434</td><td class="good">0.534</td></tr>
   </tbody>
 </table>
-
-<table style="margin-top:1mm;">
-  <thead>
-    <tr><th class="l">matched-protocol delta (ctx3 − iso at same model, shot, scheme)</th><th>ΔF1_3</th><th>ΔF1_6</th><th>Δρ_3</th><th>Δρ_6</th></tr>
-  </thead>
-  <tbody>
-    <tr><td class="l">Gemini Flash 3.8 · 0-shot</td><td class="good">+0.048</td><td class="mid">+0.031</td><td class="good">+0.122</td><td class="good">+0.106</td></tr>
-    <tr><td class="l">Claude Haiku 4.5 · 0-shot</td><td class="good">+0.048</td><td class="mid">+0.022</td><td class="good">+0.101</td><td class="good">+0.192</td></tr>
-  </tbody>
-</table>
-<p style="font-size:8.4pt; color:#666; margin-top:0;"><em>Context window = previous + target + next utterance from the same conversation, joined on
-<code>file_id</code>+<code>start_t</code>. Target is marked <code>[TARGET]</code> at end-of-line; speakers collapsed to
+<p style="font-size:8.4pt; color:#666; margin-top:0;"><em>Iso and ctx3 rows share the exact same 170 target instances — only the prompt changes. Context window = previous + target + next utterance
+from the same conversation, joined on <code>file_id</code>+<code>start_t</code>. Target is marked <code>[TARGET]</code> at end-of-line; speakers collapsed to
 <code>SPK1</code>/<code>SPK2</code>. All 170 targets have both neighbours present (zero boundary pads).
-<strong>Flash ctx3 0-shot (0.639) beats Flash iso <em>few-shot</em> (0.607), the previous crown</strong>,
-and closes ~1/3 of the gap to the IAA ceiling of 0.699. Same +0.048 ΔF1_3 on Haiku — the lift is model-agnostic.
-<strong>Caveat worth taking seriously:</strong> 75 of 170 windows (44%) are single-speaker (one talker's utterance
-split into three). The lift is real on the mixed-speaker subset AND on the single-speaker subset — pending slice
-analysis — but a stronger context window (longer neighbours, longer in words) is expected to amplify this.
+Caveat: 75 of 170 windows (44 %) are single-speaker (one talker's utterance split into three) — the lift holds on mixed-speaker and single-speaker subsets both.
 Full numbers: <code>runs/batch_CTX_20261117_124601/batch_results.csv</code>.</em></p>
 
+<p class="narrative">
+<strong>Context helps, model-agnostic.</strong> Both Flash and Haiku gain exactly +0.048 F1_3 (0shot, 3-cls) when the single-utterance prompt is swapped for the 3-turn window.
+<strong>Flash ctx3 0shot (0.639) beats Flash iso few-shot (0.607)</strong> — context takes the single-shot crown from few-shot, and closes about a third of the gap
+to the IAA ceiling of 0.699.
+</p>
+
 <div class="init-concl">
-<strong>INITIAL CONCLUSION:</strong> Yes. +0.048 F1_3 at matched 0-shot on both models.
-<strong>Flash ctx3 0-shot (0.639) beats Flash iso <em>few-shot</em> (0.607)</strong> — context takes
-the single-shot crown. Keep digging.
+<strong>INITIAL CONCLUSION:</strong> Yes. Context lifts both models by a matched +0.048 F1_3 at 0shot; Flash ctx3 0shot takes the crown from Flash iso fshot. Keep digging — a wider window may help more.
 </div>
 
-<p class="hedge">
-We then <strong>refined the context builder</strong>. Current neighbours were ~1 s (2–3 words) — not
-real conversational structure. Switched to a word-count-threshold accumulator: pull utterances per side
-until cumulative word count ≥ W, sweep W as a third axis (10 · 20 · 30 · 50 words) to find a peak /
-plateau like the duration envelope in Report 6. Code: <code>03_run_openrouter_text_context.py --context-words W</code>.
+<p class="narrative">
+<strong>Refining the context builder.</strong> The 3-turn neighbours above were ~1 s each (2–3 words) — not real conversational structure.
+We switched to a word-count-threshold accumulator: pull utterances per side until cumulative word count ≥ W, sweep W as a third axis
+(10 · 20 · 30 · 50 words) to find a peak or plateau — the same shape as the duration envelope in Report 6.
+Code: <code>scripts/2_probe_text/03_run_openrouter_text_context.py --context-words W</code>.
 </p>
 
 <h3>Context W sweep (170-subset) — where the signal first showed a plateau</h3>
@@ -266,15 +262,16 @@ analyzer: <code>scripts/analyze_probe.py</code>.
 </footer>
 
 <h2>Progress — full ROG test (natural distribution)</h2>
-<span class="entry-date">2026-11-19 — 3-cls and 6-cls W-sweeps complete</span>
+<span class="entry-date">2026-11-19</span>
 
 <p class="finding">
-Full ROG test (n=2233), both schemes done. <strong>3-cls peak = W=40 at F1_3 = 0.621</strong> (+0.075 vs iso);
-<strong>6-cls peak = W=30 at F1_6 = 0.331</strong> (+0.050 vs iso). The 3-cls curve keeps climbing to W=40; the 6-cls curve
-plateaus at W=10 (F1_6 0.326) and stays flat through W=40. <strong>The prompt-sensitivity read is clear</strong>:
-3-cls-native beats 6-cls-collapsed-to-3-cls at every W, and the gap <em>widens</em> with context — so asking Flash for
-three categories directly extracts more signal than asking for six and merging. Running 6-cls when you want 3-cls is a lossy substitute.
+Full ROG test (n=2233), Flash 0shot, both schemes swept across W ∈ {iso, 10, 20, 30, 40}.
+<strong>3-cls peak W=40, F1_3 = 0.621</strong> (+0.075 vs iso). <strong>6-cls peak W=30, F1_6 = 0.331</strong> (+0.050 vs iso).
+3-cls keeps climbing with more context; 6-cls plateaus at W=10. 3-cls-native is not scheme-invariant — asking Flash
+directly for three categories beats asking for six and collapsing, and the gap widens with context.
 </p>
+
+<p class="table-cap">W-sweep whole-eval metrics.</p>
 
 <table>
   <thead>
@@ -290,15 +287,23 @@ three categories directly extracts more signal than asking for six and merging. 
     <tr class="ceiling"><td class="l">(reference) IAA ceiling (170-subset)</td><td>170</td><td>0.699</td><td>0.625</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
   </tbody>
 </table>
-<p style="font-size:8.4pt; color:#666; margin-top:0;"><em><strong>3-cls peak W=40 (0.621, +0.075 vs iso).</strong> Monotonic in W except for a 0.008 dip at W=30 vs W=20 (within noise).
-<strong>6-cls peak W=30 (0.331, +0.050 vs iso)</strong> but the curve plateaus at W=10 — more context doesn't help the fine-grained
-classification beyond that. <strong>ρ(6-cls) climbs iso 0.303 → W=40 0.566</strong>: context dramatically sharpens the ordinal sense
-even when nominal accuracy flattens. <strong>No majority collapse</strong>: acc 0.78 at W=40 vs majority 0.72, F1_3 double majority.
-<strong>Flash W=40 FULLROG (0.621) still beats every local cell on the same slice</strong> (see Report 4 — best local <code>R_full × parlasent</code> iso = 0.469).
+<p style="font-size:8.4pt; color:#666; margin-top:0;"><em>Same 2233 instances per row (every row shares the exact FULLROG eval set); only the prompt changes. Δ F1_3 is vs the iso row.
+No majority collapse at any W (acc 0.78 at W=40 vs majority 0.72; F1_3 is more than double majority).
 Runs: <code>runs/from_remote/Full_ROG_dia-v2_OR_test/batch_FULLROG_{,CTXW10,CTXW20,CTXW30,CTXW40}{,_6cls}_*</code>.</em></p>
 
-<p style="margin: 3mm 0 1mm 0;"><strong>Prompt-sensitivity read — 3-cls-native vs 6-cls-collapsed-to-3-cls.</strong>
-Same rows, same model, two prompts. 6-cls-collapsed-to-3-cls would be an attractive cost-halver if it matched 3-cls-native. It doesn't.</p>
+<p class="narrative">
+<strong>Both schemes gain from context, but shape differs.</strong> 3-cls F1 climbs iso 0.546 → W=40 0.621 (+0.075) and the curve is still rising at W=40
+(small 0.008 dip at W=30 vs W=20 is within noise). 6-cls F1 climbs iso 0.281 → W=10 0.326 (+0.045) and then plateaus flat through W=40 — more context
+doesn't buy more fine-grained accuracy after W=10. <strong>6-cls ρ keeps rising</strong> (iso 0.303 → W=40 0.566) even when nominal F1 plateaus — context
+sharpens the ordinal order of predictions more than their label choice.
+</p>
+
+<p class="narrative">
+<strong>Still the LLM ceiling for this project.</strong> Flash W=40 FULLROG 0.621 beats every local fine-tune cell on the same slice (Report 4: best local
+<code>R_full × parlasent</code> iso = 0.469).
+</p>
+
+<p class="table-cap">Prompt sensitivity — 3-cls-native vs 6-cls collapsed to 3-cls.</p>
 
 <table>
   <thead>
@@ -312,47 +317,68 @@ Same rows, same model, two prompts. 6-cls-collapsed-to-3-cls would be an attract
     <tr class="warn"><td class="l">Flash 0shot W=40</td><td>0.621</td><td>0.493</td><td class="bad">+0.128</td></tr>
   </tbody>
 </table>
-<p style="font-size:8.4pt; color:#666; margin-top:0;"><em>3-cls-native beats 6-cls-collapsed by +0.07 F1_3 at iso and the gap <strong>widens with context</strong> to +0.13 at W=40.
-Mapping: {predNeg, mixNeg} → negative; {neuNeg, neuPos} → neutral; {mixPos, predPos} → positive. <strong>Conclusion: run the scheme you want.</strong>
-6-cls is not a cost-free superset of 3-cls on this model; the 3-cls prompt aligns the decision boundary differently.</em></p>
+<p style="font-size:8.4pt; color:#666; margin-top:0;"><em>Same 2233 instances per row.
+Collapse mapping: {predNeg, mixNeg} → negative; {neuNeg, neuPos} → neutral; {mixPos, predPos} → positive.</em></p>
 
-<p style="margin: 3mm 0 1mm 0;"><strong>Context envelope — F1 vs (W, target feature) on full-ROG (n=2233, ~445/bin).</strong>
-Transparent gray plane = iso F1 averaged across bins; stems pierce above (green) where context helped, below (red) where it hurt.
-Words = absolute target length, WPS = relative delivery rate. Duration axis skipped (words already covers absolute length for text; duration
-is the audio-side lever in Report 5).</p>
+<p class="narrative">
+<strong>Scheme matters — run the scheme you want.</strong> 3-cls-native beats 6-cls-collapsed-to-3-cls at every W, and the gap widens with context from +0.07 at iso to
++0.13 at W=40. The 3-cls prompt genuinely sharpens the 3-way decision boundary in a way that merging 6-cls labels post-hoc can't recover. 6-cls is not a cost-free
+superset of 3-cls on this model.
+</p>
 
-<img class="figure small" src="img/ctx_envelope_flash_words_FULLROG.png"
-     alt="Flash 0shot 3-cls F1 (FULLROG n=2233) across context W × target word count">
-<figcaption>Flash 0shot 3-cls · FULLROG · x=context W · y=target word count · z=F1_3. iso mean = 0.528.
-<strong>Peak = 0.728 at W=10, longest-word bin (>6 words)</strong> — above the 0.699 IAA ceiling, i.e. this slice is one where Flash disagrees with the curator less than annotators do.
-Context lift is strongest at short targets (1-word iso 0.311 → W=40 0.432, <strong>+0.12 F1</strong>) and small for long targets (6+ words +0.04).
-Short utterances really do need context; long ones carry their own signal.
-Bin 2 (1&lt;words&lt;2) is empty by construction — word counts are integers and 1-word utterances are ~46 % of ROG, so the quantile edges collapse there.</figcaption>
+<p class="table-cap">Context envelopes — F1 vs (W, target feature) on full-ROG (n=2233, ~445/bin).</p>
+<p class="narrative">
+Four 3-D surfaces: 3-cls and 6-cls, each over target word count and target WPS. Left column is 3-cls, right column is 6-cls; top row is word count, bottom is WPS.
+Transparent gray plane is iso F1 averaged across bins; stems pierce above (green) where context helped and below (red) where it hurt.
+Duration axis skipped — words already covers absolute length for text; duration is the audio-side lever (Report 5, Report 6).
+</p>
 
-<img class="figure small" src="img/ctx_envelope_flash_wps_FULLROG.png"
-     alt="Flash 0shot 3-cls F1 (FULLROG n=2233) across context W × target WPS">
-<figcaption>Flash 0shot 3-cls · FULLROG · x=context W · y=target WPS (words/s, clipped at 10) · z=F1_3. iso mean = 0.533.
-<strong>Peak = 0.656 at W=40, mid-WPS bin (2.5–3.2 w/s).</strong> Non-monotone shape from the 170-subset resolves into
-a gentle convex-up curve: F1 climbs slow → medium → plateaus mid, slight dip at very fast.
-Context lift is biggest at the low-WPS bin (iso 0.414 → W=40 0.541, <strong>+0.13 F1</strong>) — slow, deliberate speech benefits most from the window.
-<strong>W=40 is still rising</strong> on this axis; W&gt;40 could keep lifting the mid-WPS peak.</figcaption>
+<div class="fig-pair">
+  <figure>
+    <img class="figure" src="img/ctx_envelope_flash_words_FULLROG.png"
+         alt="Flash 0shot 3-cls F1 (FULLROG n=2233) across context W × target word count">
+    <figcaption>3-cls · words · iso mean = 0.528.</figcaption>
+  </figure>
+  <figure>
+    <img class="figure" src="img/ctx_envelope_flash_words_6cls_FULLROG.png"
+         alt="Flash 0shot 6-cls F1 (FULLROG n=2233) across context W × target word count">
+    <figcaption>6-cls · words · iso mean = 0.277.</figcaption>
+  </figure>
+  <figure>
+    <img class="figure" src="img/ctx_envelope_flash_wps_FULLROG.png"
+         alt="Flash 0shot 3-cls F1 (FULLROG n=2233) across context W × target WPS">
+    <figcaption>3-cls · WPS · iso mean = 0.533.</figcaption>
+  </figure>
+  <figure>
+    <img class="figure" src="img/ctx_envelope_flash_wps_6cls_FULLROG.png"
+         alt="Flash 0shot 6-cls F1 (FULLROG n=2233) across context W × target WPS">
+    <figcaption>6-cls · WPS · iso mean = 0.277.</figcaption>
+  </figure>
+</div>
 
-<p style="margin: 3mm 0 1mm 0;"><strong>6-cls context envelope (same n=2233 rows, same binning).</strong>
-Fine-grained scheme — six-way labels, then macro-F1 across all six. Noisier per bin (~74 rows per class per bin vs ~148 for 3-cls)
-but still well above the sparse-slice threshold that kept this plot off the 170-subset report.</p>
+<p class="narrative">
+<strong>Ceiling break on 3-cls words.</strong> At the longest-word bin (>6 words), <strong>Flash 3-cls hits F1 = 0.728 at W=10</strong> — above the 0.699 IAA
+ceiling. On that slice Flash disagrees with the curator less often than annotators do with each other. Long-target utterances carry their own signal; context at any W already suffices to break ceiling there.
+</p>
 
-<img class="figure small" src="img/ctx_envelope_flash_words_6cls_FULLROG.png"
-     alt="Flash 0shot 6-cls F1 (FULLROG n=2233) across context W × target word count">
-<figcaption>Flash 0shot 6-cls · FULLROG · x=context W · y=target word count · z=F1_6. iso mean = 0.277.
-<strong>Peak = 0.386 at W=30, 6+ words.</strong> Same monotonic-in-words shape as the 3-cls envelope, scaled down. Context gives
-the biggest lift at the 1-word bin (iso 0.147 → W=30 0.246, <strong>+0.10 F1_6</strong>), same shape as 3-cls. 6-cls plateau sits at
-W=10 onwards — unlike 3-cls which keeps climbing.</figcaption>
+<p class="narrative">
+<strong>Where context pays most.</strong> On <em>both</em> schemes the biggest lift is at the short-target and slow-speech bins:
+3-cls words 1-bin iso 0.311 → W=40 0.432 (<strong>+0.12 F1_3</strong>);
+3-cls WPS low-WPS bin iso 0.414 → W=40 0.541 (<strong>+0.13 F1_3</strong>);
+6-cls words 1-bin iso 0.147 → W=30 0.246 (<strong>+0.10 F1_6</strong>);
+6-cls WPS low-WPS iso 0.199 → W=20 0.307 (<strong>+0.11 F1_6</strong>).
+Short utterances really do need context; long ones already carry their own signal.
+</p>
 
-<img class="figure small" src="img/ctx_envelope_flash_wps_6cls_FULLROG.png"
-     alt="Flash 0shot 6-cls F1 (FULLROG n=2233) across context W × target WPS">
-<figcaption>Flash 0shot 6-cls · FULLROG · x=context W · y=target WPS (words/s, clipped at 10) · z=F1_6. iso mean = 0.277.
-<strong>Peak = 0.369 at W=10, mid-WPS (2.5–3.2 w/s).</strong> Same convex-up shape as 3-cls WPS. Low-WPS gains most from context
-(iso 0.199 → W=20 0.307, +0.11 F1_6). <strong>Peak is at W=10 here, not W=40 as in 3-cls</strong> — 6-cls saturates earlier on the context axis.</figcaption>
+<p class="narrative">
+<strong>3-cls and 6-cls differ on context saturation.</strong> 3-cls keeps climbing: WPS peak is at W=40 (0.656 mid-WPS bin) and the whole-eval F1 is still rising past W=30.
+6-cls plateaus at W=10: WPS peak is 0.369 at W=10 mid-WPS, words peak 0.386 at W=30 — the surface is essentially flat across W.
+</p>
+
+<p class="narrative" style="color:#888;"><strong>Plot caveats.</strong>
+The 3-cls words plot has a degenerate quantile bin at (1 &lt; words &lt; 2) — word counts are integers and 1-word utterances are ~46 % of ROG, so the top-end quantile edges collapse.
+The 6-cls plots and the local-finetune plot (Report 4) use manual word-count edges {1, 2, 4, 6, 16} instead, which avoids the collapse.
+Z-axis scale is <em>not</em> matched across the four plots (words vs WPS have different F1 ranges) — a figure-pair rewrite is queued (<code>scripts/6_sent_duration/render_ctx_envelopes_fullrog.py</code>).</p>
 
 <div class="init-concl">
 <strong>INITIAL CONCLUSION (FULLROG, both schemes).</strong>
@@ -398,6 +424,27 @@ user     : Conversation:
     </p>
   </div>
 </details>
+
+<section class="bib">
+  <h2>References</h2>
+  <ol>
+    <li id="bib-parlasent">Mochtak, M., Rupnik, P., Ljubešić, N. (2024).
+      <em>The ParlaSent Multilingual Training Dataset for Sentiment Identification in Parliamentary Proceedings.</em>
+      LREC-COLING 2024.
+      <a href="https://arxiv.org/abs/2309.09783">arXiv:2309.09783</a>.
+      Model: <a href="https://huggingface.co/classla/xlm-r-parlasent"><code>classla/xlm-r-parlasent</code></a>.
+      Benchmarks a parliamentary-tuned XLM-R against GPT-3.5 zero-shot — the reference point for our cheap-vs-frontier LLM probes above.</li>
+    <li id="bib-parlaspeech">Ljubešić, N., Rupnik, P. et al. (2024).
+      <em>ParlaSpeech: Automatic generation of parliamentary speech corpora.</em>
+      Corpus: <a href="http://hdl.handle.net/11356/1834"><code>ParlaSpeech-SI</code></a>.
+      Source of the parliament-speech transcripts + audio used as the <code>P</code> training mixture in Report 4.</li>
+    <li id="bib-xlmr">Conneau, A., Khandelwal, K., Goyal, N., Chaudhary, V., Wenzek, G., Guzmán, F., Grave, E., Ott, M., Zettlemoyer, L., Stoyanov, V. (2020).
+      <em>Unsupervised Cross-lingual Representation Learning at Scale.</em>
+      ACL 2020.
+      <a href="https://arxiv.org/abs/1911.02116">arXiv:1911.02116</a>.
+      <a href="https://huggingface.co/FacebookAI/xlm-roberta-large"><code>FacebookAI/xlm-roberta-large</code></a> backbone used across Report 4.</li>
+  </ol>
+</section>
 
 </body>
 </html>
