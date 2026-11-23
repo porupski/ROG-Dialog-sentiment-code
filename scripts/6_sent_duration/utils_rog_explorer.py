@@ -640,8 +640,9 @@ def load_context_sweep(iso_batch: Path, ctx_batches: dict, model: str = "flash",
 
 
 def context_envelope_grid(sweep: dict, feature: str = "duration",
-                          n_bins: int = 5, mode: str = "quantile",
-                          scheme: str = "3", wps_clip: float = 10.0) -> tuple:
+                          n_bins: int = 5, mode: str = "auto_p",
+                          scheme: str = "3", wps_clip: float = 10.0,
+                          edges_override: "list | np.ndarray | None" = None) -> tuple:
     """Build the (W, feature-bin) grid of macro-F1.
 
     feature ∈ {'duration', 'words', 'wps'}:
@@ -654,16 +655,23 @@ def context_envelope_grid(sweep: dict, feature: str = "duration",
         per-W grid.
 
     Bin edges are quantile edges over the UNION of all sweep rows (so the x-axis
-    is identical across W slices and surfaces are comparable).
+    is identical across W slices and surfaces are comparable). `edges_override`
+    overrides with explicit edges when the quantile scheme collapses (e.g.
+    words: 46% of ROG is 1-word, so quantile edges pile up at 1 and lose the
+    mid-range resolution Ivan wants between 6 and 25).
 
     Returns (W_values_sorted, bin_edges, F1_matrix[n_W, n_bins], count_matrix[n_W, n_bins]).
     """
     if feature not in ("duration", "words", "wps"):
         raise ValueError("feature must be 'duration', 'words', or 'wps'")
-    if scheme != "3":
-        raise ValueError("only 3-cls envelope is implemented (6-cls is in the sweep CSV but "
-                         "the sparse 29-per-class slice gets too thin per bin)")
-    labels3 = ["negative", "neutral", "positive"]
+    if scheme == "3":
+        labels_cls = ["negative", "neutral", "positive"]
+        gold_col, pred_col = "gold_3", "pred_3"
+    elif scheme == "6":
+        labels_cls = LABELS_6
+        gold_col, pred_col = "gold_6", "pred_6"
+    else:
+        raise ValueError(f"scheme must be '3' or '6', got {scheme!r}")
 
     def _feat_vec(df):
         if feature == "duration":
@@ -674,33 +682,134 @@ def context_envelope_grid(sweep: dict, feature: str = "duration",
         v = df["wps"].values
         return np.where(np.isnan(v), np.nan, np.minimum(v, wps_clip))
 
-    all_feat = []
-    for df in sweep.values():
-        v = _feat_vec(df)
-        v = v[~np.isnan(v)] if feature == "wps" else v
-        all_feat.extend(list(v))
-    edges = _bin_edges(pd.Series(all_feat), n_bins, mode=mode)
+    if edges_override is not None:
+        edges = np.asarray(edges_override, dtype=float)
+    elif mode == "auto_p":
+        edges = _auto_bin_edges_p(sweep, feature, _feat_vec, gold_col, pred_col,
+                                  labels_cls)
+    else:
+        all_feat = []
+        for df in sweep.values():
+            v = _feat_vec(df)
+            v = v[~np.isnan(v)] if feature == "wps" else v
+            all_feat.extend(list(v))
+        edges = _bin_edges(pd.Series(all_feat), n_bins, mode=mode)
+    n_bins_eff = len(edges) - 1
 
     Ws = sorted(sweep.keys())
-    F1 = np.full((len(Ws), n_bins), np.nan)
-    cnt = np.zeros((len(Ws), n_bins), dtype=int)
+    F1 = np.full((len(Ws), n_bins_eff), np.nan)
+    cnt = np.zeros((len(Ws), n_bins_eff), dtype=int)
     for w_idx, W in enumerate(Ws):
         df = sweep[W]
         feat = _feat_vec(df)
-        gold = df["gold_3"].tolist()
-        pred = df["pred_3"].tolist()
+        gold = df[gold_col].tolist()
+        pred = df[pred_col].tolist()
         valid = ~np.isnan(feat) if feature == "wps" else np.ones(len(feat), dtype=bool)
-        for j in range(n_bins):
-            lo, hi = edges[j], edges[j + 1] + (1e-6 if j == n_bins - 1 else 0)
+        for j in range(n_bins_eff):
+            lo, hi = edges[j], edges[j + 1] + (1e-6 if j == n_bins_eff - 1 else 0)
             mask = valid & (feat >= lo) & (feat < hi)
-            n = int(mask.sum())
+            # Skip rows with None gold/pred (6-cls has sparse-column NaNs).
+            g = [gold[i] for i in range(len(gold))
+                 if mask[i] and gold[i] is not None and pred[i] is not None]
+            p = [pred[i] for i in range(len(pred))
+                 if mask[i] and gold[i] is not None and pred[i] is not None]
+            n = len(g)
             if n == 0:
                 continue
-            g = [gold[i] for i in range(len(gold)) if mask[i]]
-            p = [pred[i] for i in range(len(pred)) if mask[i]]
             cnt[w_idx, j] = n
-            F1[w_idx, j] = _macro_f1(g, p, labels3)
+            F1[w_idx, j] = _macro_f1(g, p, labels_cls)
     return Ws, edges, F1, cnt
+
+
+def _auto_bin_edges_p(sweep: dict, feature: str, feat_vec_fn,
+                      gold_col: str, pred_col: str, labels_cls: list,
+                      min_count_per_bin: int = 30,
+                      p_threshold: float = 0.05) -> np.ndarray:
+    """Greedy autoselect of bin edges. Start fine, merge adjacent bins when
+    any bin fails either constraint:
+      - `n < min_count_per_bin` (UNION count across all Ws), or
+      - chi-square independence test of (gold × pred) returns p >= p_threshold.
+
+    Returns the finest edge array that passes both gates.
+    """
+    from scipy.stats import chi2_contingency
+
+    # Union feature vector + gold/pred across all Ws.
+    rows = []
+    for df in sweep.values():
+        v = feat_vec_fn(df)
+        g = df[gold_col].tolist()
+        p = df[pred_col].tolist()
+        for fv, gv, pv in zip(v, g, p):
+            if gv is None or pv is None:
+                continue
+            if feature == "wps" and (isinstance(fv, float) and np.isnan(fv)):
+                continue
+            rows.append((float(fv), gv, pv))
+    if not rows:
+        return np.array([0.0, 1.0])
+    rows.sort(key=lambda r: r[0])
+    xs = np.array([r[0] for r in rows])
+
+    # Candidate edges: unique feature values (integers for `words`, finer for wps).
+    if feature == "words":
+        cands = sorted(set(int(round(x)) for x in xs))
+        edges = np.array(cands + [cands[-1] + 1], dtype=float)
+    else:
+        q = np.linspace(0, 1, 15)
+        edges = np.unique(np.quantile(xs, q))
+
+    def _eval(edges):
+        out = []
+        for j in range(len(edges) - 1):
+            lo, hi = edges[j], edges[j + 1] + (1e-6 if j == len(edges) - 2 else 0)
+            rs = [r for r in rows if lo <= r[0] < hi]
+            n = len(rs)
+            if n < 2:
+                out.append((n, 1.0))
+                continue
+            # Chi-square on confusion matrix.
+            ct = {}
+            for _, gv, pv in rs:
+                ct[(gv, pv)] = ct.get((gv, pv), 0) + 1
+            table = np.array([[ct.get((g, p), 0) for p in labels_cls]
+                              for g in labels_cls], dtype=float)
+            if table.sum(0).min() == 0 or table.sum(1).min() == 0:
+                out.append((n, 1.0))
+                continue
+            try:
+                _, pval, _, _ = chi2_contingency(table)
+            except Exception:
+                pval = 1.0
+            out.append((n, float(pval)))
+        return out
+
+    # Greedy merge until all bins pass. Merge the worst-offending bin with its
+    # smaller-count neighbour; break ties by merging rightward.
+    while len(edges) > 3:
+        stats = _eval(edges)
+        offenders = [(j, n, pval) for j, (n, pval) in enumerate(stats)
+                     if n < min_count_per_bin or pval >= p_threshold]
+        if not offenders:
+            break
+        # Pick the offender with the lowest count.
+        offenders.sort(key=lambda t: (t[1], t[2]))
+        j = offenders[0][0]
+        if j == 0:
+            new_edges = np.concatenate([edges[:1], edges[2:]])
+        elif j == len(edges) - 2:
+            new_edges = np.concatenate([edges[:-2], edges[-1:]])
+        else:
+            n_left = stats[j - 1][0]
+            n_right = stats[j + 1][0]
+            if n_left <= n_right:
+                new_edges = np.concatenate([edges[:j], edges[j + 1:]])
+            else:
+                new_edges = np.concatenate([edges[:j + 1], edges[j + 2:]])
+        if len(new_edges) == len(edges):
+            break
+        edges = new_edges
+    return edges
 
 
 def plot_context_envelope_3d(sweep: dict, feature: str = "duration",
@@ -793,6 +902,313 @@ def plot_context_envelope_3d(sweep: dict, feature: str = "duration",
         fig.tight_layout()
     except Exception:
         pass
+    return fig, (Ws, edges, F1, cnt, iso_mean)
+
+
+def plot_context_envelope_3d_v2(sweep: dict, feature: str = "duration",
+                                n_bins: int = 5, mode: str = "quantile",
+                                scheme: str = "3", title_suffix: str = "",
+                                smooth_sigma: float = 1.2, finer_grid: int = 100,
+                                wps_clip: float = 10.0,
+                                zlim: tuple | None = None,
+                                elev: float = 28, azim: float = -120,
+                                edges_override: "list | np.ndarray | None" = None,
+                                iaa_ceiling: float | None = None,
+                                iaa_label: str = "IAA ceiling",
+                                water_color: str = "#5dade2",
+                                ceiling_color: str = "#d7a4b3",
+                                intersection_color: str = "#00e5ff",
+                                ceiling_intersection_color: str = "#ff2ea6",
+                                draw_intersection: bool = True):
+    """Overhauled context-envelope renderer.
+
+    2x3 figure: main 3-D occupies the left 2x2 cells; two 1-D profiles sit on
+    the right column (top = F1 vs feature, one line per W; bottom = F1 vs
+    context-W, one line per feature-bin). Baseline plane sits at iso F1 and
+    behind the signal surface (water metaphor — mountains stick up through it).
+    Vertical stems from the floor up to each anchor point let the eye read off
+    (W, feature) coordinates. Intersection between signal and baseline is
+    picked out with a gold contour.
+
+    `zlim=(lo, hi)` forces the F1 axis range — used to match z-axis across
+    paired plots (e.g. 3cls words vs 6cls words).
+    """
+    import matplotlib.pyplot as plt
+    import matplotlib.colors as mcolors
+    from matplotlib import gridspec
+    from matplotlib.colors import LightSource, Normalize
+    from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+    from scipy.interpolate import RegularGridInterpolator
+    from scipy.ndimage import gaussian_filter
+
+    Ws, edges, F1, cnt = context_envelope_grid(sweep, feature=feature, n_bins=n_bins,
+                                               mode=mode, scheme=scheme, wps_clip=wps_clip,
+                                               edges_override=edges_override)
+    n_bins_eff = len(edges) - 1
+    iso_f1_per_bin = F1[Ws.index(-1)]
+    iso_mean = float(np.nanmean(iso_f1_per_bin))
+
+    W_labels = ["iso" if w == -1 else f"W={w}" for w in Ws]
+    x_raw = np.arange(len(Ws), dtype=float)
+    y_raw = 0.5 * (edges[:-1] + edges[1:])
+
+    # Fine grid for a soft surface.
+    F1_filled = np.where(np.isnan(F1), iso_mean, F1)
+    interp = RegularGridInterpolator((x_raw, y_raw), F1_filled, method="linear",
+                                     bounds_error=False, fill_value=iso_mean)
+    xf = np.linspace(x_raw.min(), x_raw.max(), finer_grid)
+    yf = np.linspace(y_raw.min(), y_raw.max(), finer_grid)
+    Xf, Yf = np.meshgrid(xf, yf, indexing="ij")
+    Zf = interp(np.stack([Xf.ravel(), Yf.ravel()], axis=-1)).reshape(Xf.shape)
+    Zf = gaussian_filter(Zf, sigma=smooth_sigma)
+
+    # Color + Z normalisation.
+    vmin = max(0.0, iso_mean - 0.10)
+    vmax = min(1.0, max(float(np.nanmax(F1)) + 0.05, iso_mean + 0.25))
+    if zlim is None:
+        zlo = max(0.0, iso_mean - 0.15)
+        zhi = min(1.0, vmax + 0.02)
+    else:
+        zlo, zhi = zlim
+
+    # Figure + GridSpec. Wider canvas so legends can live outside the side
+    # panels (bbox_to_anchor spills right of each axes); savefig with
+    # bbox_inches="tight" catches them.
+    fig = plt.figure(figsize=(16.5, 7.8))
+    gs = gridspec.GridSpec(2, 3, figure=fig, width_ratios=[1.0, 1.0, 0.85],
+                           hspace=0.32, wspace=0.28,
+                           left=0.04, right=0.85, top=0.92, bottom=0.08)
+    ax_main = fig.add_subplot(gs[:, :2], projection="3d")
+    # Disable matplotlib's centroid-based painter sort — explicit zorder on
+    # each artist is honoured instead. Required to keep the water/ceiling
+    # planes above or below the signal surface consistently.
+    try:
+        ax_main.computed_zorder = False
+    except Exception:
+        pass
+    ax_feat = fig.add_subplot(gs[0, 2])
+    ax_ctx  = fig.add_subplot(gs[1, 2])
+
+    # Signal surface — RdYlGn colormap over the smoothed Zf, shaded with a
+    # top-left light source for relief.
+    ls = LightSource(azdeg=315, altdeg=55)
+    norm = Normalize(vmin=vmin, vmax=vmax)
+    rgba = plt.get_cmap("RdYlGn")(norm(Zf))
+    rgb = rgba[..., :3]
+    try:
+        shaded = ls.shade_rgb(rgb, Zf, vert_exag=0.5, blend_mode="soft")
+    except Exception:
+        shaded = rgb
+    facecolors = np.concatenate([shaded, np.ones(shaded.shape[:2] + (1,))], axis=-1)
+
+    # Per-polygon cell centres for the water/ceiling alpha masks. plot_surface
+    # with rstride=cstride=1 emits one polygon per (Nx-1, Ny-1) grid cell; its
+    # colour is taken from the (i, j) vertex by default. Using per-polygon
+    # facecolors with alpha=0 for out-of-region cells avoids the NaN-masked
+    # approach, which dropped mixed-sign polygons at the crossing and left
+    # visible gaps where the signal oscillates across the baseline.
+    Zf_centre = 0.25 * (Zf[:-1, :-1] + Zf[1:, :-1] + Zf[:-1, 1:] + Zf[1:, 1:])
+    water_rgb = mcolors.to_rgb(water_color)
+    ceiling_rgb = mcolors.to_rgb(ceiling_color)
+
+    def _plane_facecolors(mask: np.ndarray, rgb: tuple, alpha: float) -> np.ndarray:
+        fc = np.zeros(mask.shape + (4,), dtype=float)
+        fc[..., :3] = rgb
+        fc[..., 3] = np.where(mask, alpha, 0.0)
+        return fc
+
+    Zplane = np.full_like(Xf, iso_mean)
+
+    # Water background: cells where the signal is above baseline. Drawn
+    # BEFORE the signal surface and fainter — reads as the water line behind
+    # the mountain silhouette.
+    water_bg_fc = _plane_facecolors(Zf_centre > iso_mean, water_rgb, 0.26)
+    ax_main.plot_surface(Xf, Yf, Zplane, facecolors=water_bg_fc,
+                         rstride=1, cstride=1,
+                         edgecolor="none", linewidth=0, antialiased=True,
+                         shade=False, zorder=1)
+
+    # Ceiling background (where signal has broken through the ceiling).
+    if iaa_ceiling is not None and zlo <= iaa_ceiling <= zhi:
+        Zceil = np.full_like(Xf, iaa_ceiling)
+        ceiling_bg_fc = _plane_facecolors(Zf_centre > iaa_ceiling, ceiling_rgb, 0.22)
+        ax_main.plot_surface(Xf, Yf, Zceil, facecolors=ceiling_bg_fc,
+                             rstride=1, cstride=1,
+                             edgecolor="none", linewidth=0, antialiased=True,
+                             shade=False, zorder=2)
+
+    # Signal surface itself.
+    surf = ax_main.plot_surface(Xf, Yf, Zf, facecolors=facecolors,
+                                rstride=1, cstride=1,
+                                edgecolor="none", linewidth=0, antialiased=True,
+                                shade=False, zorder=5)
+
+    # Water foreground — covers the submerged region (cells where the signal
+    # is at or below baseline).
+    water_fg_fc = _plane_facecolors(Zf_centre <= iso_mean, water_rgb, 0.58)
+    ax_main.plot_surface(Xf, Yf, Zplane, facecolors=water_fg_fc,
+                         rstride=1, cstride=1,
+                         edgecolor="none", linewidth=0, antialiased=True,
+                         shade=False, zorder=12)
+
+    # Ceiling foreground — sits above the signal surface wherever the signal
+    # is below the ceiling.
+    if iaa_ceiling is not None and zlo <= iaa_ceiling <= zhi:
+        Zceil = np.full_like(Xf, iaa_ceiling)
+        ceiling_fg_fc = _plane_facecolors(Zf_centre <= iaa_ceiling, ceiling_rgb, 0.40)
+        ax_main.plot_surface(Xf, Yf, Zceil, facecolors=ceiling_fg_fc,
+                             rstride=1, cstride=1,
+                             edgecolor="none", linewidth=0, antialiased=True,
+                             shade=False, zorder=14)
+
+    # Intersection contours drawn as Line3D objects (ax.plot) rather than
+    # ax.contour(offset=…). matplotlib's 3-D sort handles Line3D more
+    # reliably than Poly3DCollection ties, so the highlight stays on top.
+    if draw_intersection:
+        try:
+            import matplotlib.patheffects as pe
+            import matplotlib.pyplot as _plt
+            # Baseline crossing.
+            _tmp_fig, _tmp_ax = _plt.subplots()
+            _cs = _tmp_ax.contour(Xf, Yf, Zf, levels=[iso_mean])
+            z_lift_base = iso_mean + 0.004 * max(zhi - zlo, 1e-6)
+            try:
+                segs_base = _cs.allsegs[0]
+            except Exception:
+                segs_base = []
+            for seg in segs_base:
+                if len(seg) < 2:
+                    continue
+                xs, ys = seg[:, 0], seg[:, 1]
+                zs = np.full_like(xs, z_lift_base)
+                ln, = ax_main.plot(xs, ys, zs, color=intersection_color,
+                                   lw=2.6, zorder=40)
+                ln.set_path_effects(
+                    [pe.Stroke(linewidth=4.4, foreground="#101010", alpha=0.75),
+                     pe.Normal()])
+            _plt.close(_tmp_fig)
+
+            # Ceiling crossing.
+            if iaa_ceiling is not None and zlo <= iaa_ceiling <= zhi:
+                _tmp_fig2, _tmp_ax2 = _plt.subplots()
+                _cs2 = _tmp_ax2.contour(Xf, Yf, Zf, levels=[iaa_ceiling])
+                z_lift_c = iaa_ceiling + 0.004 * max(zhi - zlo, 1e-6)
+                try:
+                    segs_c = _cs2.allsegs[0]
+                except Exception:
+                    segs_c = []
+                for seg in segs_c:
+                    if len(seg) < 2:
+                        continue
+                    xs, ys = seg[:, 0], seg[:, 1]
+                    zs = np.full_like(xs, z_lift_c)
+                    ln, = ax_main.plot(xs, ys, zs,
+                                       color=ceiling_intersection_color,
+                                       lw=2.4, zorder=42)
+                    ln.set_path_effects(
+                        [pe.Stroke(linewidth=4.2, foreground="#101010", alpha=0.75),
+                         pe.Normal()])
+                _plt.close(_tmp_fig2)
+        except Exception:
+            pass
+
+    # Anchor pins: stem from the floor up to F1[i,j], marker AT the raw
+    # (x, y, F1) point. Markers sit on the surface so the eye picks up each
+    # cell's exact value; stems carry the sign-vs-iso cue.
+    for i in range(len(Ws)):
+        for j in range(n_bins_eff):
+            if cnt[i, j] == 0:
+                continue
+            x, y, z = x_raw[i], y_raw[j], F1[i, j]
+            ax_main.plot([x, x], [y, y], [zlo, z],
+                         color=("#2e7d32" if z >= iso_mean else "#b73b3b"),
+                         lw=0.6, alpha=0.55, zorder=15)
+            ax_main.scatter([x], [y], [z], s=26,
+                            c=[z], cmap="RdYlGn", vmin=vmin, vmax=vmax,
+                            edgecolor="black", linewidth=0.4,
+                            depthshade=False, zorder=22)
+
+    ax_main.set_xticks(x_raw)
+    ax_main.set_xticklabels(W_labels, fontsize=9)
+    y_unit = {"duration": "s", "words": "words", "wps": f"words/s, clip={wps_clip:g}"}[feature]
+    ax_main.set_xlabel("context width"); ax_main.set_ylabel(f"target {feature} ({y_unit})")
+    ax_main.set_zlabel(f"macro-F1 ({scheme}-cls)")
+    ax_main.set_zlim(zlo, zhi)
+    ax_main.view_init(elev=elev, azim=azim)
+    # Words are integer-valued — pin the y ticks to integers so halves don't
+    # show up on the y axis.
+    if feature == "words":
+        from matplotlib.ticker import MaxNLocator
+        ax_main.yaxis.set_major_locator(MaxNLocator(integer=True))
+    ax_main.set_title(f"Context envelope — F1 vs (W, target {feature})  "
+                      f"baseline={iso_mean:.3f}"
+                      f"{('  ·  ' + title_suffix) if title_suffix else ''}",
+                      fontsize=11)
+
+    # Colorbar for the main 3-D panel. ScalarMappable with the surface's cmap
+    # + normalisation since plot_surface(facecolors=...) doesn't expose one.
+    sm = plt.cm.ScalarMappable(cmap="RdYlGn", norm=norm)
+    sm.set_array([])
+    cbar = fig.colorbar(sm, ax=ax_main, shrink=0.55, pad=0.08,
+                        label=f"macro-F1 ({scheme}-cls)")
+    _ = cbar
+
+    # ── Side profile A (top-right): F1 vs feature, one line per W ────────
+    # X axis reversed so the direction matches the 3-D view (feature axis
+    # goes "away from viewer" at this azimuth — small values on the right,
+    # large values on the left as seen in the 3-D plot).
+    cmap_W = plt.get_cmap("plasma")
+    for i, W in enumerate(Ws):
+        color = cmap_W(i / max(len(Ws) - 1, 1))
+        valid = cnt[i] > 0
+        if not valid.any():
+            continue
+        ax_feat.plot(y_raw[valid], F1[i, valid], marker="o", markersize=4, lw=1.7,
+                     color=color, label=W_labels[i])
+    ax_feat.axhline(iso_mean, color="#555", lw=1.0, ls="--", alpha=0.8,
+                    label=f"iso mean = {iso_mean:.3f}")
+    if iaa_ceiling is not None:
+        ax_feat.axhline(iaa_ceiling, color=ceiling_color, lw=1.2, ls=":", alpha=0.95,
+                        label=f"{iaa_label} = {iaa_ceiling:.3f}")
+    ax_feat.set_xlabel(f"target {feature} ({y_unit})")
+    ax_feat.set_ylabel("macro-F1")
+    ax_feat.set_ylim(zlo, zhi)
+    ax_feat.invert_xaxis()
+    if feature == "words":
+        from matplotlib.ticker import MaxNLocator
+        ax_feat.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax_feat.set_title(f"Profile — F1 vs {feature} (one line per W)", fontsize=10)
+    ax_feat.legend(fontsize=7.5, loc="center left", bbox_to_anchor=(1.02, 0.5),
+                   frameon=True, title="context")
+    ax_feat.grid(True, alpha=0.25)
+
+    # ── Side profile B (bottom-right): F1 vs context-W, one line per bin ──
+    # Categorical palette (tab10) — distinct per bin, not a gradient (bins
+    # are ordered but the per-line comparison is categorical).
+    tab = plt.get_cmap("tab10")
+    for j in range(n_bins_eff):
+        color = tab(j % 10)
+        valid = cnt[:, j] > 0
+        if not valid.any():
+            continue
+        bin_label = f"{edges[j]:.1f}–{edges[j+1]:.1f}"
+        ax_ctx.plot(x_raw[valid], F1[valid, j], marker="o", markersize=4, lw=1.7,
+                    color=color, label=bin_label)
+    ax_ctx.axhline(iso_mean, color="#555", lw=1.0, ls="--", alpha=0.8,
+                   label=f"iso mean = {iso_mean:.3f}")
+    if iaa_ceiling is not None:
+        ax_ctx.axhline(iaa_ceiling, color=ceiling_color, lw=1.2, ls=":", alpha=0.95,
+                       label=f"{iaa_label} = {iaa_ceiling:.3f}")
+    ax_ctx.set_xticks(x_raw)
+    ax_ctx.set_xticklabels(W_labels, fontsize=8, rotation=20)
+    ax_ctx.set_xlabel("context width")
+    ax_ctx.set_ylabel("macro-F1")
+    ax_ctx.set_ylim(zlo, zhi)
+    ax_ctx.set_title(f"Profile — F1 vs context (one line per {feature} bin)", fontsize=10)
+    ax_ctx.legend(fontsize=7.5, loc="center left", bbox_to_anchor=(1.02, 0.5),
+                  frameon=True, title=f"{feature} bin ({y_unit})")
+    ax_ctx.grid(True, alpha=0.25)
+
     return fig, (Ws, edges, F1, cnt, iso_mean)
 
 

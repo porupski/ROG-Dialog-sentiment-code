@@ -215,15 +215,24 @@ machine before launch):
   Previous TASKS list (sentiment3 + DA dimension/function cells) is preserved
   as a commented block for future rerun.
 
-### 4.1 — iso benchmarks on `rog_dia_full` (three backbones)
+### 4.1 — iso benchmarks on `rog_dia_full` (three backbones) — v1 landed
 
 Three backbones × ROG-Dialog v2 full train/dev/test × no context window.
 Train recipe: SSP default (`freeze_feature_encoder=true`, encoder trainable,
-head from scratch), 10 epochs, backbone-matched LR. This is the first table at
-the top of Report 5 (`docs/5_local_audio_probing_finetuning.html`).
+head from scratch), 10 epochs, backbone-matched LR, `class_weighting=none`.
 
-- **When**: 2026-11-20 (queued)
-- **Status**: TODO
+- **When**: 2026-11-20
+- **Status**: DONE (2 cells completed, 1 OOM)
+- **Result dir**: `slavic-speech-pipeline/runs/senthunt_audio_iso_v1/`
+- **Headline (ROG-full TEST, macro-F1_3)**:
+  - `iso_w2v2-base`  → **0.276** (collapsed to majority-neutral; majority baseline = 0.278)
+  - `iso_xls-r-300m` → **0.292** (barely above majority baseline)
+  - `iso_w2v-bert-2` → OOM at `batch_size=32` on 40 GB GPU after 34 s
+- **Wall time**: 970 s (base) + 1706 s (xls-r) + 34 s (OOM) ≈ 45 min
+- **Read**: with `class_weighting=none`, the 72 % neutral prior dominates; the
+  3-class head converges on all-neutral. Any audio modality lift has to come
+  from recipes that break this collapse. Phase 4.2 moves to sqrt-inverse
+  weighting, higher LR, and longer training.
 - **Prep** (on the remote host, in the `ssp-cuda` conda env, from the SSP
   repo root):
   ```
@@ -276,32 +285,120 @@ the top of Report 5 (`docs/5_local_audio_probing_finetuning.html`).
   Target to beat: **0.469** (XLM-R-parlasent × R_full iso text-side lift,
   Report 4). If any audio backbone exceeds this, we've shown a modality lift.
 
-### 4.2 — train-set ablation (rog_dia 2s-filtered, ParlaSpeech-SI matched)
+### 4.2 — iso recipe sweep: sqrt-inverse × LR × epochs (9 cells)
 
-**Status**: BLOCKED on open questions below. Rough shape: for each backbone
-that cleared 4.1, run two additional train-set variants:
-- `rog_dia` (≥ 2 s-filtered ROG train, same test set)
-- `parlaspeech_si` resampled to mimic rog_dia_full's duration + WPS distribution
+Phase 4.1 collapse → 3-recipe grid to break the majority-neutral attractor.
+All 9 cells train on `rog_dia_full` with `class_weighting=sqrt_inverse`.
 
-Then re-eval on both `rog_dia_full` test and `parlaspeech_si` test matched to
-`rog_dia_full` test.
+- **When**: 2026-11-20 (queued)
+- **Status**: TODO
+- **TASKS now in** `slavic-speech-pipeline/4_instance_models/43_run_task_list.py`
+  (replaces the Phase 4.1 cw=none block; previous iso cw=none block preserved
+  below as history).
+- **Recipes**:
+  - **R1** — sqrt, default LR, 10 epochs (sanity check: does weighting alone break collapse?)
+  - **R2** — sqrt, 3× default LR, 10 epochs (`wav2vec2-base`→3e-5, `xls-r-300m`→1e-4, `w2v-bert-2.0`→1e-4)
+  - **R3** — sqrt, default LR, 20 epochs (longer anneal)
+- **OOM fix for `w2v-bert-2.0`** (all three recipes): `batch_size=8`,
+  `grad_accum=4` (effective batch 32). The 40 GB cluster GPU can't hold
+  `w2v-bert-2.0` at BS=32; this halves resident batch and compensates with
+  gradient accumulation.
+- **Launch**:
+  ```
+  tmux new -s audio_iso_v2
+  cd 4_instance_models
+  python 43_run_task_list.py \
+      --mode full --use_gpu \
+      --list_dir senthunt_audio_iso_v2 \
+      2>&1 | tee ../runs/43_senthunt_audio_iso_v2_$(date +%Y-%m-%d_%H%M%S).log
+  ```
+- **Est. time**: base cells ~16 min, xls-r cells ~28 min, w2v-bert-2 cells
+  ~45 min (BS=8 ↑ time), R3 (20 epochs) ~2× the 10-epoch cells.
+  Rough total ~6 h.
+- **Result dir**: `slavic-speech-pipeline/runs/senthunt_audio_iso_v2/`
+- **Read**: compare R1 vs R2 vs R3 per backbone to decide which knob matters.
+  Target: beat the 0.469 local-text ceiling on any (backbone, recipe) cell.
+  If sqrt alone lifts F1_3 above ~0.35 for all three backbones, context-window
+  Phase 4.3 is next; if all three stay stuck near the majority baseline, we
+  need to look at freezing/unfreezing the feature extractor, warmup length,
+  or dropping the regression-head recipe in favour of a MSE-on-ordinal variant.
 
-**Open questions** (need Ivan's input before plumbing):
+### 4.3 — mixture matrix, freeze probes, regression axis (27 cells, three stages)
 
-1. SSP's `data/processed_jsonl/` has no `parlaspeech_v4_si_utterance_instance.jsonl`
-   and `data/processed_audio/` holds ROG-Dialog-v2 only. Where does the
-   ParlaSpeech-SI audio + utterance JSONL live on the remote host, and should
-   we symlink from there or run SSP's chapter-1 prep on-remote first?
-2. "Matched to full ROG" resampling policy — marginal duration only, joint
-   `(duration, WPS)` stratified binning, or something else?
-3. The existing `rog_dia_sentiment_3` TARGETS entry is unfiltered. For a
-   2 s-train / full-test cell we need either (a) a new TARGETS entry with
-   `min_duration_s: 2.0` that only applies at train time, or (b) a split-level
-   filter knob in `load_split`. (a) breaks test eval (would drop <2 s rows);
-   (b) is a chapter-4 feature extension. Suggest (b) — call it
-   `train_min_duration_s` on the Config dataclass.
+**When**: 2026-11-21 (queued for weekend)
+**Status**: QUEUED — task list in `slavic-speech-pipeline/4_instance_models/task_list.json`
+**Launch**:
+```
+tmux new -s audio_p43
+cd 4_instance_models
+python -u 43_run_task_list.py \
+    --mode full --use_gpu \
+    --list_dir senthunt_audio_p43 \
+    2>&1 | tee ../runs/43_senthunt_audio_p43_$(date +%Y-%m-%d_%H%M%S).log
+```
 
-### 4.3 — context-window sweep (W ∈ {10, 20, 30, 40})
+**Prereqs (run once, local or remote, before launching)**:
+
+1. **w2v-BERT collator patch** has landed in `utils_instance_train.py`
+   (`DataCollatorForInstance.__call__` now branches on `ndim == 2` and pads
+   log-Mel features manually — HF base `SequenceFeatureExtractor._pad` was
+   1-D-only). Smoke-test locally on CPU first:
+   ```
+   python -u 43_run_task_list.py --limit 1 --mode test --dry_run
+   ```
+2. **ParlaSpeech-SI subset JSONLs** — 11c's full
+   `parlaspeech_v4_si_utterance_instance.jsonl` needs to be subset to 200h
+   and 500h caps, plus two ROG-merged files. Launch from the SSP repo root
+   (or 1_data_prep/ — relative paths resolve against both):
+   ```
+   cd slavic-speech-pipeline
+   python 1_data_prep/11c_prep_subset_parlaspeech.py --target_hours 200 --name 200h \
+       --merge_with data/processed_jsonl/rog_dialog_v2_instance.jsonl \
+       --merge_tag rog_plus
+   python 1_data_prep/11c_prep_subset_parlaspeech.py --target_hours 500 --name 500h \
+       --merge_with data/processed_jsonl/rog_dialog_v2_instance.jsonl \
+       --merge_tag rog_plus
+   ```
+   Emits `parlaspeech_v4_si_subset_{200h,500h}.jsonl` +
+   `rog_plus_merged_{200h,500h}.jsonl` under
+   `data/processed_jsonl/`. The merged files carry a unified `sentiment_f`
+   float on [0, 5] (ROG strings mapped via ordinal, PS via its native
+   `sentiment_6`) — consumed by the four `*_sentiment_regr_*` TARGETS
+   entries added to `utils_instance_train.py`.
+
+**Matrix (27 cells)**:
+
+- **Phase 0** (3 cells, w2v-BERT classification on ROG-only, R1/R2/R3
+  recipes from REF-2026-11-20) — patch-verification runs; if any still
+  OOM/ValueError, halt and retry the collator fix before the rest.
+- **Stage A** (12 cells, regression on `sentiment_f`): 2 regression-capable
+  backbones (wav2vec2-base, xls-r-300m) × 3 mixtures (R_full, P_200h,
+  PR_200h) × 2 freeze (F0=conv-only, F1=head-only via `freeze_encoder=true`).
+- **Stage B** (6 cells, mixed): 3 longer-training variants on expected
+  Stage-A leaders (xls-r/w2v2 × PR_200h × 20 epochs, xls-r PR_200h at
+  high-LR) + 3 classification probes (w2v-BERT F1 + xls-r / w2v2 F0 at
+  20 epochs on R_full for direct Phase-0 comparison).
+- **Stage C** (6 cells, regression): xls-r × {P_500h, PR_500h × {F0, F1,
+  20e}, PR_200h/PR_500h at seed=5678 for variance check}.
+
+Stage B's picks are currently generic (longest-LR / longest-anneal probes
+against the expected leaders); after Stage A completes, open
+`task_list.json` and swap the Stage B / C backbone picks if a different
+backbone tops the board.
+
+**Est. time**: ~45–55 h cumulative (overnight × 2–3).
+
+**Guardrails recap**:
+- w2v-BERT runs classification only (SSP's `Wav2Vec2ForRegression` hard-fails
+  on non-wav2vec2 backbones; writing a `Wav2Vec2BertForRegression` mirror is
+  deferred — see handoff for rationale).
+- All regression cells report Spearman on the raw float and (post-hoc, in
+  analysis) on 3-cls bins via thresholds 1.5 and 3.5.
+- Task list is the live `task_list.json`; the pre-v2 queues live on disk as
+  `task_list_REF-2026-11-20.json` (audio iso v2) and
+  `task_list_REF-2026-11-09.json` (pre-v2 ROG-Dialog).
+
+### 4.4 — context-window sweep (W ∈ {10, 20, 30, 40})
 
 **Status**: DESIGN PENDING. The handover notes two plausible implementations:
 - (A) Concatenate neighbor-clip audio into the input waveform.

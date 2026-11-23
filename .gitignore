@@ -3,6 +3,7 @@ misc
 data
 
 results_docs
+docs/img/trash
 
 __pycache__
 scripts/__pycache__
