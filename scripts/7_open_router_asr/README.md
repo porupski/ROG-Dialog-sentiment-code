@@ -1,9 +1,13 @@
 # 7 · Google Chirp 3 ASR of ROG-Dialog v2
 
-Transcribe all of ROG-Dialog v2 with Google Cloud Speech-to-Text v2 (model = `chirp_3`) and attach the ASR
+Transcribe all of ROG-Dialog v2 with Chirp 3 via OpenRouter
+(`https://openrouter.ai/api/v1/audio/transcriptions`, model `google/chirp-3`) and attach the ASR
 transcripts to each instance alongside the human gold transcripts. Goal: a realistic "what the model sees in
 production" variant of ROG, which the text probing matrices (Reports 2 and 4) can then be rerun on top of,
 giving a gold-vs-ASR text performance delta.
+
+OR path chosen over the native `google.cloud.speech_v2` SDK because the rest of the project already runs on
+OR (same `misc/key.txt`, same retry pattern) — no new auth, no GCP project to provision.
 
 ## Why Chirp 3
 
@@ -15,7 +19,7 @@ colloquial-dialect register the stock Chirp3 may not have been trained on.
 
 ## Plan of record
 
-1. **Validate on the 170-subset first** (`subset_170.jsonl` — same subset Report 3 audio probing used).
+1. **Validate on the 170-subset first** (`data/subset_174_seed42_v2.jsonl` — same subset Report 3 audio probing used; 170 rows post-filter).
    Transcribe, compute WER + CER against both the colloquial and normalised ROG tiers (ROG only has the
    colloquial tier; "normalised" here means the orthographic cleanup already in `rog_dialog_v2_instance.jsonl`).
    If WER < ~0.25 on the 170-subset, proceed to full ROG. If not, fall back to turn-level or file-level
