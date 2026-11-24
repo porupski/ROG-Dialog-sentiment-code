@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
 """04_build_asr_jsonl — merge Chirp3 ASR transcripts into a ROG-style JSONL.
 
-Emits one row per original instance, with:
-  - `text` ← ASR transcript (so Reports 2 + 4 pipelines consume ASR by default)
-  - `text_gold` ← original gold text (kept for diff / scoring)
-  - `asr_wer_norm`, `asr_cer_norm`, `overlap`, `overlap_frac` ← joined from enriched metrics
-  - everything else carried over unchanged (instance_id, split, labels, audio_path, ...)
+Emits one row per original instance with THREE text fields, all explicit:
+  - `text`     ← ASR transcript (= `text_asr`); default for downstream pipelines
+  - `text_asr` ← same as `text`, explicit alias for readability
+  - `text_gold`← original gold text (kept for diff / scoring)
 
-Rows where the ASR failed or returned empty transcript keep `text` as empty string
-(downstream scripts must tolerate empty text — or filter on `asr_wer_norm == NaN`).
+Plus the ASR metrics joined in:
+  - `asr_wer_norm`, `asr_cer_norm`, `asr_status`
+  - `overlap` ∈ {no, won, lost, unknown}, `overlap_frac` ∈ [0,1]
+
+Everything else carried over unchanged (instance_id, split, labels, audio_path,
+metadata.colloq_text, ...). `colloq_text` is unrelated — it's the dialect variant
+from the ROG EXB source, not ASR.
+
+Rows with empty ASR transcript keep `text`/`text_asr` as empty string.
 
 Usage:
     mamba run -n ssp python3 scripts/7_open_router_asr/04_build_asr_jsonl.py \\
@@ -57,28 +63,32 @@ def main():
         for r in rog:
             iid = r["instance_id"]
             p = preds.get(iid)
+            gold_text = r.get("text", "")
             if p is None:
                 n_missing += 1
-                new_row = dict(r)
-                new_row["text_gold"] = r.get("text", "")
-                new_row["text"] = ""
-                new_row["asr_status"] = "missing"
-                new_row["asr_wer_norm"] = None
-                new_row["asr_cer_norm"] = None
-                new_row["overlap"] = "unknown"
-                new_row["overlap_frac"] = None
+                asr_text = ""
+                asr_status = "missing"
+                wer_n = cer_n = None
+                overlap = "unknown"
+                overlap_frac = None
             else:
                 asr_text = (p.get("transcript") or "").strip()
                 if not asr_text:
                     n_empty += 1
-                new_row = dict(r)
-                new_row["text_gold"] = r.get("text", "")
-                new_row["text"] = asr_text
-                new_row["asr_status"] = p.get("status") or ("empty" if not asr_text else "ok")
-                new_row["asr_wer_norm"] = p.get("wer_norm")
-                new_row["asr_cer_norm"] = p.get("cer_norm")
-                new_row["overlap"] = p.get("overlap")
-                new_row["overlap_frac"] = p.get("overlap_frac")
+                asr_status = p.get("status") or ("empty" if not asr_text else "ok")
+                wer_n = p.get("wer_norm")
+                cer_n = p.get("cer_norm")
+                overlap = p.get("overlap")
+                overlap_frac = p.get("overlap_frac")
+            new_row = dict(r)
+            new_row["text"] = asr_text          # downstream default
+            new_row["text_asr"] = asr_text      # explicit alias
+            new_row["text_gold"] = gold_text    # preserved gold
+            new_row["asr_status"] = asr_status
+            new_row["asr_wer_norm"] = wer_n
+            new_row["asr_cer_norm"] = cer_n
+            new_row["overlap"] = overlap
+            new_row["overlap_frac"] = overlap_frac
             f.write(json.dumps(new_row, ensure_ascii=False) + "\n")
             n_written += 1
 
@@ -106,16 +116,18 @@ def main():
             for row in tmpl:
                 iid = row["instance_id"]
                 p = preds.get(iid)
-                new_row = dict(row)
-                new_row["text_gold"] = row.get("text", "")
+                gold_text = row.get("text", "")
                 if p is None:
-                    new_row["text"] = ""
+                    asr = ""
                     n_sub_missing += 1
                 else:
                     asr = (p.get("transcript") or "").strip()
-                    new_row["text"] = asr
                     if not asr:
                         n_sub_empty += 1
+                new_row = dict(row)
+                new_row["text"] = asr          # downstream default
+                new_row["text_asr"] = asr      # explicit alias
+                new_row["text_gold"] = gold_text
                 new_row["asr_wer_norm"] = p.get("wer_norm") if p else None
                 new_row["overlap"] = p.get("overlap") if p else "unknown"
                 f.write(json.dumps(new_row, ensure_ascii=False) + "\n")

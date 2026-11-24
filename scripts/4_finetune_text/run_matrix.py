@@ -88,8 +88,13 @@ def main():
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_dir = Path(args.out) if args.out else (ROOT / "runs" / f"finetune_{stamp}")
+    if not out_dir.is_absolute():
+        out_dir = (ROOT / out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Matrix output root: {out_dir.relative_to(ROOT)}")
+    try:
+        print(f"Matrix output root: {out_dir.relative_to(ROOT)}")
+    except ValueError:
+        print(f"Matrix output root: {out_dir}")
 
     engine = HERE / "finetune_text.py"
 
