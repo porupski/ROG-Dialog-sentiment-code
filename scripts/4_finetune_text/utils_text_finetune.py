@@ -163,6 +163,17 @@ SOURCES: dict[str, dict] = {
         "modality": "text_transcript",
         "lang": "sl",
     },
+    # ASR-text variant: same rows as rog_dia_full, but row['text'] is the Chirp 3
+    # transcript (gold is preserved under row['text_gold']). Built by
+    # scripts/7_open_router_asr/04_build_asr_jsonl.py. Used for the Report 7
+    # delta story: how much F1_3 drops when we feed realistic (non-gold) text.
+    "rog_dia_full_asr": {
+        "path": "data/rog_dialog_v2_instance_ASR.jsonl",
+        "reader": _reader_rog_dia_unfiltered,
+        "family": "dialog_speech",
+        "modality": "text_transcript_asr",
+        "lang": "sl",
+    },
 }
 
 # Mixtures: train on the union of listed sources. Eval is on all entries of Config.eval_sources
@@ -189,6 +200,13 @@ MIXTURES: dict[str, list[str]] = {
     "R_full_ctxw10": ["rog_dia_full_ctxw10"],
     "R_full_ctxw20": ["rog_dia_full_ctxw20"],
     "R_full_ctxw30": ["rog_dia_full_ctxw30"],
+    # ASR text variants — train on Chirp 3 transcripts instead of gold.
+    # Build the JSONL first:
+    #   python3 scripts/7_open_router_asr/04_build_asr_jsonl.py
+    # Launch:
+    #   run_matrix.py --backbones classla/xlm-r-parlasent --mixtures R_full_ASR
+    "R_full_ASR":   ["rog_dia_full_asr"],
+    "SR_full_ASR":  ["parlasent_sl", "rog_dia_full_asr"],
 }
 
 BACKBONES: list[str] = [
