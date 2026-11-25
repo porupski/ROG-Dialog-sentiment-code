@@ -200,6 +200,11 @@ MIXTURES: dict[str, list[str]] = {
     "R_full_ctxw10": ["rog_dia_full_ctxw10"],
     "R_full_ctxw20": ["rog_dia_full_ctxw20"],
     "R_full_ctxw30": ["rog_dia_full_ctxw30"],
+    # Context on the triple mixture — does context flip from HURT (R_full, 10 k rows)
+    # to HELP at SPR_full scale (747 k rows)? S + P stay as-is (short parliamentary
+    # text); only the R rows are context-rendered. max_length override lives in
+    # config.json mixture_overrides.
+    "SPR_full_ctxw20": ["parlasent_sl", "parlaspeech_si", "rog_dia_full_ctxw20"],
     # ASR text variants — train on Chirp 3 transcripts instead of gold.
     # Build the JSONL first:
     #   python3 scripts/7_open_router_asr/04_build_asr_jsonl.py
@@ -239,6 +244,7 @@ class Config:
     # Eval
     eval_sources: list = field(default_factory=lambda: [
         "parlasent_sl", "parlaspeech_si", "rog_dia", "rog_dia_full",
+        "rog_dia_full_asr",
     ])
     best_metric: str = "spearman"  # dev metric for best-epoch pick
     # Caps (test/demo)
