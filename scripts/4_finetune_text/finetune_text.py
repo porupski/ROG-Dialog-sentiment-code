@@ -44,17 +44,35 @@ def apply_mode(cfg: Config, mode: str, config_json: Path | None):
     paper recipe (Mochtak et al. 2023)."""
     if config_json and config_json.exists():
         j = json.loads(config_json.read_text())
+        RUNNER_ONLY = {"reserved_gpu"}   # read by run_matrix.py, not a Config field
+
+        def _apply(block_name, d):
+            for k, v in d.items():
+                if k in RUNNER_ONLY:
+                    continue
+                if not hasattr(cfg, k):
+                    raise SystemExit(f"config.json [{block_name}]: unknown key '{k}' "
+                                     f"(not a Config field in utils_text_finetune.py)")
+                setattr(cfg, k, v)
+
         for block in ("shared", "regression"):
-            for k, v in j.get(block, {}).items():
-                if hasattr(cfg, k):
-                    setattr(cfg, k, v)
-        for k, v in j.get("modes", {}).get(mode, {}).items():
-            if hasattr(cfg, k):
-                setattr(cfg, k, v)
-        for k, v in j.get("mixture_overrides", {}).get(cfg.mixture, {}).items():
-            if hasattr(cfg, k):
-                setattr(cfg, k, v)
-    return cfg
+            _apply(block, j.get(block, {}))
+        _apply(f"modes.{mode}", j.get("modes", {}).get(mode, {}))
+        _apply(f"mixture_overrides.{cfg.mixture}", j.get("mixture_overrides", {}).get(cfg.mixture, {}))
+    return cfg    
+    # if config_json and config_json.exists():
+    #     j = json.loads(config_json.read_text())
+    #     for block in ("shared", "regression"):
+    #         for k, v in j.get(block, {}).items():
+    #             if hasattr(cfg, k):
+    #                 setattr(cfg, k, v)
+    #     for k, v in j.get("modes", {}).get(mode, {}).items():
+    #         if hasattr(cfg, k):
+    #             setattr(cfg, k, v)
+    #     for k, v in j.get("mixture_overrides", {}).get(cfg.mixture, {}).items():
+    #         if hasattr(cfg, k):
+    #             setattr(cfg, k, v)
+    # return cfg
 
 
 def main():
@@ -66,10 +84,26 @@ def main():
     p.add_argument("--out", "-o", default=None, help="override runs output dir")
     p.add_argument("--use_gpu", action="store_true",
                    help="informational — GPU is armed by run_matrix.py via CUDA_VISIBLE_DEVICES")
+    p.add_argument("--dev_mode", default=None, choices=["pooled", "sources"],
+                   help="per-epoch dev: 'pooled' = union of mixture dev splits; 'sources' = one dev set per --dev_sources")
+    p.add_argument("--dev_sources", nargs="*", default=None,
+                   help="source names to eval on every epoch (implies --dev_mode sources), e.g. rog_dia_full rog_dia_full_asr")
+    p.add_argument("--best_dev_source", default=None,
+                   help="which dev source picks the best epoch (default: first of --dev_sources)")
     args = p.parse_args()
 
     cfg = Config(backbone=args.backbone, mixture=args.mixture, use_gpu=args.use_gpu)
+    # cfg = apply_mode(cfg, args.mode, Path(args.config))
     cfg = apply_mode(cfg, args.mode, Path(args.config))
+    # CLI overrides beat config.json
+    if args.dev_sources is not None:
+        cfg.dev_sources = args.dev_sources
+        if args.dev_mode is None:
+            cfg.dev_mode = "sources"
+    if args.dev_mode is not None:
+        cfg.dev_mode = args.dev_mode
+    if args.best_dev_source is not None:
+        cfg.best_dev_source = args.best_dev_source
 
     out_dir = Path(args.out) if args.out else (ROOT / cfg.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

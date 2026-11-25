@@ -254,6 +254,12 @@ class Config:
         "rog_dia_full_asr",
     ])
     best_metric: str = "spearman"  # dev metric for best-epoch pick
+    # Dev set(s) evaluated every epoch (drive the best-epoch restore)
+    #   "pooled"  : union of dev splits of the mixture's training sources (legacy behaviour)
+    #   "sources" : one dev set per name in dev_sources; metrics logged as eval_<name>_<metric>
+    dev_mode: str = "pooled"
+    dev_sources: list = field(default_factory=list)   # empty -> the mixture's own sources
+    best_dev_source: str | None = None                # which dev set picks the best epoch; None -> first of dev_sources    
     # Caps (test/demo)
     cap_train: int | None = None
     cap_dev: int | None = None
@@ -358,10 +364,41 @@ def mix_train(cfg: Config, root: Path, rng_seed: int = 42):
     rng.shuffle(train_all)
     if cfg.cap_train is not None:
         train_all = train_all[:cfg.cap_train]
-    if cfg.cap_dev is not None:
+    # if cfg.cap_dev is not None:
+    #     dev_all = dev_all[:cfg.cap_dev]
+    # return train_all, dev_all
+    if cfg.cap_dev is not None and cfg.dev_mode == "pooled":
         dev_all = dev_all[:cfg.cap_dev]
     return train_all, dev_all
 
+
+def build_dev_sets(cfg: Config, root: Path, pooled_dev: list[dict]):
+    """dev_mode='sources': one dev set per name in cfg.dev_sources (default: the mixture's
+    own sources). Sources that are in the training mixture reuse the dev rows mix_train()
+    already produced (incl. any 10 % carve-out from train); other sources are loaded and
+    use their own 'dev' split. Returns ({name: rows}, best_dev_name)."""
+    if cfg.dev_mode != "sources":
+        raise SystemExit(f"Unknown dev_mode '{cfg.dev_mode}' (use 'pooled' or 'sources').")
+    names = list(cfg.dev_sources) or list(MIXTURES[cfg.mixture])
+    unknown = [n for n in names if n not in SOURCES]
+    if unknown:
+        raise SystemExit(f"dev_sources has unknown source(s): {unknown}. Valid: {sorted(SOURCES)}")
+    in_mix = set(MIXTURES[cfg.mixture])
+    out = {}
+    for n in names:
+        if n in in_mix:
+            rows = [r for r in pooled_dev if r["source"] == n]
+        else:
+            rows = split_rows(load_source(n, root), "dev")
+        if not rows:
+            raise SystemExit(f"dev source '{n}' has no dev rows (missing JSONL or no 'dev' split).")
+        if cfg.cap_dev is not None:
+            rows = rows[:cfg.cap_dev]
+        out[n] = rows
+    best = cfg.best_dev_source or names[0]
+    if best not in out:
+        raise SystemExit(f"best_dev_source '{best}' is not in dev_sources {names}.")
+    return out, best
 
 def load_test_sets(cfg: Config, root: Path) -> dict[str, list[dict]]:
     """Missing eval sources (JSONL absent) are silently dropped from the returned dict so
@@ -420,7 +457,9 @@ def build_hf_datasets(rows_train, rows_dev, rows_test_by_src, tokenizer, normali
         return Dataset.from_list(rows).map(enc, batched=True,
                                            remove_columns=[c for c in rows[0].keys() if c not in ("instance_id", "source", "label_scalar")])
     train_ds = to_ds(rows_train)
-    dev_ds   = to_ds(rows_dev)
+    dev_ds   = ({k: to_ds(v) for k, v in rows_dev.items()} if isinstance(rows_dev, dict)
+            else to_ds(rows_dev))
+    # dev_ds   = to_ds(rows_dev)
     test_ds_by_src = {k: to_ds(v) for k, v in rows_test_by_src.items() if v}
     return train_ds, dev_ds, test_ds_by_src
 
@@ -531,9 +570,20 @@ def run_training(cfg: Config, root: Path, out_dir: Path):
     print(f"  mixture  = {cfg.mixture} ({MIXTURES[cfg.mixture]})")
     print(f"  lr={cfg.learning_rate}  batch={cfg.batch_size}x{cfg.grad_accum}  epochs={cfg.num_epochs}")
 
+    # print("  loading train + dev...")
+    # train_rows, dev_rows = mix_train(cfg, root)
+    # print(f"  total train={len(train_rows)}  dev={len(dev_rows)}")
     print("  loading train + dev...")
     train_rows, dev_rows = mix_train(cfg, root)
-    print(f"  total train={len(train_rows)}  dev={len(dev_rows)}")
+    print(f"  total train={len(train_rows)}")
+    if cfg.dev_mode == "pooled":
+        print(f"  dev (pooled over mixture sources) n={len(dev_rows)}")
+        best_metric_key = f"eval_{cfg.best_metric}"
+    else:
+        dev_rows, best_dev = build_dev_sets(cfg, root, dev_rows)
+        best_metric_key = f"eval_{best_dev}_{cfg.best_metric}"
+        print("  dev sets: " + ", ".join(f"{k}={len(v)}" for k, v in dev_rows.items()))
+        print(f"  best-epoch restore keyed on: {best_metric_key}")
 
     print("  loading test sets...")
     test_rows_by_src = load_test_sets(cfg, root)
@@ -566,7 +616,8 @@ def run_training(cfg: Config, root: Path, out_dir: Path):
         eval_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,                         # the "best epoch restore" guard
-        metric_for_best_model=f"eval_{cfg.best_metric}",
+        metric_for_best_model=best_metric_key,
+        # metric_for_best_model=f"eval_{cfg.best_metric}",
         greater_is_better=True,
         report_to=[],                                        # no wandb
         logging_steps=50,
@@ -632,19 +683,34 @@ def run_training(cfg: Config, root: Path, out_dir: Path):
               f"R²={metrics['r2']:.3f} ρ={rho_s} MAE={metrics['mae']:.3f} "
               f"F1_6cls={metrics['macro_f1_6cls']:.3f} F1_3cls={metrics['macro_f1_3cls']:.3f} "
               f"| rec_3cls neg/neu/pos = {rec3[0]:.2f}/{rec3[1]:.2f}/{rec3[2]:.2f}")
-
+    
     summary = {
         "run_tag": tag,
         "config": asdict(cfg),
         "mixture_sources": MIXTURES[cfg.mixture],
         "train_n": len(train_rows),
-        "dev_n": len(dev_rows),
+        "dev_n": ({k: len(v) for k, v in dev_rows.items()} if isinstance(dev_rows, dict) else len(dev_rows)),
         "test_n_by_src": {k: len(v) for k, v in test_rows_by_src.items()},
         "label_norm": {"mean": normalizer.mean, "std": normalizer.std},
         "train_sec": round(train_sec, 1),
         "metrics_by_test": per_src_metrics,
+        "best_model_checkpoint": trainer.state.best_model_checkpoint,
+        "best_metric_name": args.metric_for_best_model,
+        "best_metric_value": trainer.state.best_metric,
         "state": trainer.state.log_history,
     }
+    # summary = {
+    #     "run_tag": tag,
+    #     "config": asdict(cfg),
+    #     "mixture_sources": MIXTURES[cfg.mixture],
+    #     "train_n": len(train_rows),
+    #     "dev_n": len(dev_rows),
+    #     "test_n_by_src": {k: len(v) for k, v in test_rows_by_src.items()},
+    #     "label_norm": {"mean": normalizer.mean, "std": normalizer.std},
+    #     "train_sec": round(train_sec, 1),
+    #     "metrics_by_test": per_src_metrics,
+    #     "state": trainer.state.log_history,
+    # }
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False))
 
     # Clean up HF checkpoint dir — we don't want to keep model weights for 21 runs.

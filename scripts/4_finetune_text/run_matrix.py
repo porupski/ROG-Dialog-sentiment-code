@@ -59,6 +59,13 @@ def main():
                         "Implies --use_gpu. Takes precedence over config.json.")
     p.add_argument("--out", "-o", default=None, help="override runs output dir")
     p.add_argument("--dry-run", action="store_true", help="print the planned command list only")
+    p.add_argument("--dev_mode", default=None, choices=["pooled", "sources"],
+                   help="per-epoch dev: 'pooled' (legacy) or 'sources' (one dev set per --dev_sources)")
+    p.add_argument("--dev_sources", nargs="*", default=None,
+                   help="source names to eval on every epoch, e.g. rog_dia_full rog_dia_full_asr")
+    p.add_argument("--best_dev_source", default=None,
+                   help="which dev source picks the best epoch (default: first of --dev_sources)")
+
     args = p.parse_args()
 
     config_json = Path(args.config)
@@ -140,6 +147,12 @@ def main():
         # --gpu implies --use_gpu at the child level; CVD is already masked to just that device.
         if args.use_gpu or args.gpu is not None:
             cmd.append("--use_gpu")
+        if args.dev_mode is not None:
+            cmd += ["--dev_mode", args.dev_mode]
+        if args.dev_sources is not None:
+            cmd += ["--dev_sources", *args.dev_sources]
+        if args.best_dev_source is not None:
+            cmd += ["--best_dev_source", args.best_dev_source]
 
         print(f"     cmd: {' '.join(cmd)}")
         if missing_in_mix:
