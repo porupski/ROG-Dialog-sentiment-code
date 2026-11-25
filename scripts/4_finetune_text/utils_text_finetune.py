@@ -205,13 +205,20 @@ MIXTURES: dict[str, list[str]] = {
     # have the 735 k-row P dominate the gradient with a format the context tokens don't
     # live in. "Does context help at 747 k scale?" is blocked on multi-turn dialogue data,
     # not solvable with current corpora.
-    # ASR text variants — train on Chirp 3 transcripts instead of gold.
-    # Build the JSONL first:
+    # ASR text variants — train on Chirp 3 transcripts instead of gold. Production
+    # scenario: deployed models will never see gold text, only ASR output. Each cell
+    # here evaluates on BOTH gold rog_dia_full and rog_dia_full_asr test slices (eval
+    # source added to Config.eval_sources default), so one training pass fills two
+    # columns of the 2×4 production matrix.
+    # Build the ASR JSONL first:
     #   python3 scripts/7_open_router_asr/04_build_asr_jsonl.py
-    # Launch:
-    #   run_matrix.py --backbones classla/xlm-r-parlasent --mixtures R_full_ASR
+    # Launch (all four ASR-train mixtures, parlasent backbone):
+    #   run_matrix.py --backbones classla/xlm-r-parlasent \
+    #     --mixtures R_full_ASR SR_full_ASR PR_full_ASR SPR_full_ASR --gpu 3 --mode full
     "R_full_ASR":   ["rog_dia_full_asr"],
     "SR_full_ASR":  ["parlasent_sl", "rog_dia_full_asr"],
+    "PR_full_ASR":  ["parlaspeech_si", "rog_dia_full_asr"],
+    "SPR_full_ASR": ["parlasent_sl", "parlaspeech_si", "rog_dia_full_asr"],
 }
 
 BACKBONES: list[str] = [
