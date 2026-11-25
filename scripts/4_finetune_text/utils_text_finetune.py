@@ -200,11 +200,11 @@ MIXTURES: dict[str, list[str]] = {
     "R_full_ctxw10": ["rog_dia_full_ctxw10"],
     "R_full_ctxw20": ["rog_dia_full_ctxw20"],
     "R_full_ctxw30": ["rog_dia_full_ctxw30"],
-    # Context on the triple mixture — does context flip from HURT (R_full, 10 k rows)
-    # to HELP at SPR_full scale (747 k rows)? S + P stay as-is (short parliamentary
-    # text); only the R rows are context-rendered. max_length override lives in
-    # config.json mixture_overrides.
-    "SPR_full_ctxw20": ["parlasent_sl", "parlaspeech_si", "rog_dia_full_ctxw20"],
+    # NOTE: NO SPR_full_ctxwN defined — mixing context-rendered R (with [SPK*]/[TARGET]
+    # markers) and plain-text S + P (no turn structure available in those corpora) would
+    # have the 735 k-row P dominate the gradient with a format the context tokens don't
+    # live in. "Does context help at 747 k scale?" is blocked on multi-turn dialogue data,
+    # not solvable with current corpora.
     # ASR text variants — train on Chirp 3 transcripts instead of gold.
     # Build the JSONL first:
     #   python3 scripts/7_open_router_asr/04_build_asr_jsonl.py
