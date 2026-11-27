@@ -73,9 +73,10 @@ def load_rog(rog_path: Path):
 
 
 def load_parla(parla_path: Path):
-    """Keep only rows with a usable audio_length and ParlaSent_3 label. Preserve the
-    original row so it can be written back verbatim and consumed by the existing
-    `_reader_parlaspeech_si` in utils_text_finetune.py — no reader changes needed."""
+    """Keep only rows with a usable audio_length and ParlaSent_3 label. Build a SLIM
+    record per row (flat schema — flatten sentiment.*, drop speaker_info / cap / pauses /
+    etc.) so downstream readers don't have to walk the nested parlaspeech blob and the
+    on-disk JSONL stays small."""
     rows = []
     kept, dropped = 0, 0
     with open(parla_path) as f:
@@ -84,7 +85,9 @@ def load_parla(parla_path: Path):
             al = r.get("audio_length")
             sent = r.get("sentiment") or {}
             lab = sent.get("ParlaSent_3")
-            if al is None or lab is None:
+            logit = sent.get("ParlaSent_logit")
+            sent6 = sent.get("ParlaSent_6")
+            if al is None or lab is None or logit is None:
                 dropped += 1
                 continue
             try:
@@ -101,11 +104,24 @@ def load_parla(parla_path: Path):
             if lab3 not in LABELS_3:
                 dropped += 1
                 continue
+            slim = {
+                "id":              r.get("id"),
+                "split":           r.get("split", "train"),
+                "label_3":         lab3,
+                "duration":        dur,
+                "wps":             words / dur,
+                "text":            text,
+                "sentiment_logit": float(logit),
+                "sentiment_6":     sent6,
+                "audio_start":     r.get("audio_start"),
+                "audio_end":       r.get("audio_end"),
+                "audio":           r.get("audio"),
+            }
             rows.append({
-                "_source_row": r,            # full original row, written back on output
-                "label_3":     lab3,
-                "duration":    dur,
-                "wps":         words / dur,
+                "_slim": slim,
+                "label_3":  lab3,
+                "duration": dur,
+                "wps":      words / dur,
             })
             kept += 1
     return rows, kept, dropped
@@ -268,21 +284,16 @@ def main():
         wps_clip=args.wps_clip, seed=args.seed,
     )
 
-    # Write out matched subset — write the FULL original ParlaSpeech row so the existing
-    # _reader_parlaspeech_si picks it up unchanged. Attach a small `_match_meta` block for
-    # provenance (duration + wps + label used during sampling).
+    # Write out matched subset — slim/flat schema:
+    #   {id, split, label_3, duration, wps, text, sentiment_logit, sentiment_6,
+    #    audio_start, audio_end, audio}
+    # Consumed by `_reader_parlaspeech_si_matched_to_rog` in utils_text_finetune.py
+    # (flat sentiment_logit, not nested sentiment.*).
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with open(args.out, "w") as f:
         for r in sampled:
-            out_row = dict(r["_source_row"])
-            out_row["_match_meta"] = {
-                "label_3":  r["label_3"],
-                "duration": r["duration"],
-                "wps":      r["wps"],
-                "matched_to": "rog_dialog_v2",
-            }
-            f.write(json.dumps(out_row, ensure_ascii=False) + "\n")
-    print(f"Wrote {len(sampled)} matched rows to {args.out}")
+            f.write(json.dumps(r["_slim"], ensure_ascii=False) + "\n")
+    print(f"Wrote {len(sampled)} matched rows (slim schema) to {args.out}")
 
     # Report
     md = render_report(rpt, sampled, rog_rows, len(parla_rows))
