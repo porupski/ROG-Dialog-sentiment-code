@@ -106,6 +106,22 @@ def _reader_parlaspeech_si(row: dict) -> dict | None:
     }
 
 
+def _reader_parlaspeech_si_matched_to_rog(row: dict) -> dict | None:
+    """ParlaSpeech-SI subsampled + duration/WPS-matched to ROG-Dialog v2 distribution.
+    Built by scripts/1_data_prep/prep_parlaspeech_matched_to_rog.py. Flat schema
+    (sentiment_logit at top level), unlike the big ParlaSpeech slim (sentiment.ParlaSent_logit).
+    2322 train / 261 dev / 295 test — near-ROG scale, so mixing is actually balanced."""
+    logit = row.get("sentiment_logit")
+    if logit is None:
+        return None
+    return {
+        "text": row.get("text") or "",
+        "label_scalar": float(logit),
+        "split": row.get("split", "train"),
+        "instance_id": row.get("id") or "ParlaSpeech-SI-matched_?",
+    }
+
+
 # Paths are relative to ROOT. Resolved by load_source().
 SOURCES: dict[str, dict] = {
     "parlasent_sl": {
@@ -118,6 +134,16 @@ SOURCES: dict[str, dict] = {
     "parlaspeech_si": {
         "path": "data/parlaspeech_v4_si_utterance_instance.jsonl",
         "reader": _reader_parlaspeech_si,
+        "family": "parliament_speech",
+        "modality": "text_transcript",
+        "lang": "sl",
+    },
+    # Subsampled + duration/WPS-matched to ROG: ~2.3 k train, near-ROG scale, so
+    # mixing is balanced instead of P dominating. Built by
+    # scripts/1_data_prep/prep_parlaspeech_matched_to_rog.py.
+    "parlaspeech_si_matched_to_rog": {
+        "path": "data/parlaspeech_v4_si_matched_to_rog.jsonl",
+        "reader": _reader_parlaspeech_si_matched_to_rog,
         "family": "parliament_speech",
         "modality": "text_transcript",
         "lang": "sl",
@@ -226,6 +252,15 @@ MIXTURES: dict[str, list[str]] = {
     "SR_full_GA":   ["parlasent_sl", "rog_dia_full", "rog_dia_full_asr"],
     "PR_full_GA":   ["parlaspeech_si", "rog_dia_full", "rog_dia_full_asr"],
     "SPR_full_GA":  ["parlasent_sl", "parlaspeech_si", "rog_dia_full", "rog_dia_full_asr"],
+    # Matched-P mixtures — `Pm` = parlaspeech_si_matched_to_rog (~2.3 k train, near-ROG
+    # scale so the mix is balanced, not 70:1 P-dominated). Use these instead of the P
+    # variants above when the goal is scale-balanced parliamentary speech adjunct.
+    "Pm":            ["parlaspeech_si_matched_to_rog"],
+    "PmR_full":      ["parlaspeech_si_matched_to_rog", "rog_dia_full"],
+    "PmR_full_ASR":  ["parlaspeech_si_matched_to_rog", "rog_dia_full_asr"],
+    "PmR_full_GA":   ["parlaspeech_si_matched_to_rog", "rog_dia_full", "rog_dia_full_asr"],
+    "SPmR_full":     ["parlasent_sl", "parlaspeech_si_matched_to_rog", "rog_dia_full"],
+    "SPmR_full_GA":  ["parlasent_sl", "parlaspeech_si_matched_to_rog", "rog_dia_full", "rog_dia_full_asr"],
 }
 
 BACKBONES: list[str] = [
