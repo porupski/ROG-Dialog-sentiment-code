@@ -219,6 +219,13 @@ MIXTURES: dict[str, list[str]] = {
     "SR_full_ASR":  ["parlasent_sl", "rog_dia_full_asr"],
     "PR_full_ASR":  ["parlaspeech_si", "rog_dia_full_asr"],
     "SPR_full_ASR": ["parlasent_sl", "parlaspeech_si", "rog_dia_full_asr"],
+    # Gold + ASR of the same ROG rows — each utterance seen twice with different
+    # surface text, same label. Lightweight augmentation that doubles the ROG
+    # training signal without new data. Pair with the final 3-seed deliverable run.
+    "R_full_GA":    ["rog_dia_full", "rog_dia_full_asr"],
+    "SR_full_GA":   ["parlasent_sl", "rog_dia_full", "rog_dia_full_asr"],
+    "PR_full_GA":   ["parlaspeech_si", "rog_dia_full", "rog_dia_full_asr"],
+    "SPR_full_GA":  ["parlasent_sl", "parlaspeech_si", "rog_dia_full", "rog_dia_full_asr"],
 }
 
 BACKBONES: list[str] = [
