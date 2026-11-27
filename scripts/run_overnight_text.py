@@ -110,7 +110,11 @@ def restore_config(prev: dict) -> None:
     CONFIG_PATH.write_text(json.dumps(c, indent=2) + "\n")
 
 
-def run_cell(backbones: list[str], mixtures: list[str], out_tag: str) -> int:
+def run_cell(backbones: list[str], mixtures: list[str], out_tag: str) -> tuple[int, Path]:
+    """Run run_matrix.py for a set of (backbone × mixture) cells. Returns
+    (exit code, output directory). The caller checks matrix_summary.json to
+    see whether individual cells actually succeeded (run_matrix.py exits 0
+    even when child cells crash)."""
     out_dir = RUNS_DIR / f"{out_tag}_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}"
     cmd = [
         sys.executable, str(RUNNER),
@@ -123,7 +127,22 @@ def run_cell(backbones: list[str], mixtures: list[str], out_tag: str) -> int:
     print(f"\n$ {' '.join(cmd)}")
     rc = subprocess.run(cmd).returncode
     print(f"-> exit {rc}, out: {out_dir}")
-    return rc
+    return rc, out_dir
+
+
+def all_cells_ok(out_dir: Path) -> bool:
+    """True iff every cell in the batch's matrix_summary.json has status 'ok'."""
+    summary_path = out_dir / "matrix_summary.json"
+    if not summary_path.exists():
+        return False
+    try:
+        summary = json.loads(summary_path.read_text())
+    except Exception:
+        return False
+    cells = summary.get("cells", [])
+    if not cells:
+        return False
+    return all(c.get("status") == "ok" for c in cells)
 
 
 def block_a_deliverable() -> None:
@@ -137,10 +156,10 @@ def block_a_deliverable() -> None:
             for ep in EPOCHS:
                 print(f"\n--- seed={seed} epochs={ep} ---")
                 patch_config(seed=seed, r_full_epochs=ep)
-                rc = run_cell([BACKBONE_CHAMP], [MIX_CHAMP],
-                              out_tag=f"finetune_deliv_s{seed}_e{ep}")
-                if rc != 0:
-                    print(f"  WARN: cell failed (rc={rc}) — continuing.")
+                rc, out = run_cell([BACKBONE_CHAMP], [MIX_CHAMP],
+                                   out_tag=f"finetune_deliv_s{seed}_e{ep}")
+                if rc != 0 or not all_cells_ok(out):
+                    print(f"  WARN: cell failed (rc={rc}, cells_ok={all_cells_ok(out)}) — continuing.")
     finally:
         if original is not None:
             restore_config(original)
@@ -153,13 +172,13 @@ def block_b_sloberta() -> None:
     print("=" * 72)
     for slug in SLOBERTA_CANDIDATES:
         print(f"\n--- backbone={slug} ---")
-        rc = run_cell([slug], [MIX_CHAMP],
-                      out_tag=f"finetune_sloberta_{slug.split('/')[-1]}")
-        if rc == 0:
-            print(f"  OK — {slug} ran. Stopping Block B here.")
+        rc, out = run_cell([slug], [MIX_CHAMP],
+                           out_tag=f"finetune_sloberta_{slug.split('/')[-1]}")
+        if rc == 0 and all_cells_ok(out):
+            print(f"  OK — {slug} trained + evaluated successfully. Stopping Block B here.")
             return
-        print(f"  {slug} failed (rc={rc}); trying next candidate.")
-    print("  Block B exhausted all candidates.")
+        print(f"  {slug} FAILED (rc={rc}, cells_ok={all_cells_ok(out)}); trying next candidate.")
+    print("  Block B exhausted all candidates — no SloBERTa cell landed.")
 
 
 def main() -> int:

@@ -581,7 +581,15 @@ def compute_metrics_from_preds(y_gold_raw: list[float], y_pred_raw: list[float])
 
 def build_model_tokenizer(backbone: str):
     from transformers import AutoTokenizer, AutoModelForSequenceClassification
-    tok = AutoTokenizer.from_pretrained(backbone)
+    # use_fast=True avoids the Camembert slow-tokenizer bug that hits SloBERTa
+    # ('too many values to unpack' in tokenization_camembert.py). Falls back to
+    # the slow tokenizer only if a fast one is unavailable for this slug.
+    try:
+        tok = AutoTokenizer.from_pretrained(backbone, use_fast=True)
+    except Exception as e:
+        print(f"  [warn] fast tokenizer load failed for {backbone} ({e!r}); "
+              f"retrying with use_fast=False.")
+        tok = AutoTokenizer.from_pretrained(backbone, use_fast=False)
     # Regression head = 1-logit classifier with MSELoss (HF convention).
     model = AutoModelForSequenceClassification.from_pretrained(
         backbone, num_labels=1, problem_type="regression",

@@ -77,7 +77,9 @@ def apply_mode(cfg: Config, mode: str, config_json: Path | None):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("--backbone", "-b", required=True, choices=BACKBONES + [b for b in BACKBONES])
+    p.add_argument("--backbone", "-b", required=True,
+                   help=f"HF model slug. Suggested: {', '.join(BACKBONES)}. "
+                        "Any AutoModelForSequenceClassification-compatible slug works.")
     p.add_argument("--mixture", "-x", required=True, choices=list(MIXTURES.keys()))
     p.add_argument("--mode", "-m", default="full", choices=["test", "demo", "full", "custom"])
     p.add_argument("--config", "-c", default=str(HERE / "config.json"))
