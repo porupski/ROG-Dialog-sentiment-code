@@ -50,7 +50,13 @@ BACKBONE_CHAMP = "classla/xlm-r-parlasent"
 MIX_CHAMP = "R_full"
 SEEDS = [42, 1337, 2024]
 EPOCHS = [8, 15, 20]
-SLOBERTA_CANDIDATES = ["EMBEDDIA/sloberta", "cjvt/SloBERTa-2.0"]
+# SloBERTa deferred: `EMBEDDIA/sloberta` triggers a Camembert tokenizer bug
+# ('too many values to unpack') in the current transformers version; the slow
+# path hits it too so use_fast=True doesn't help. `cjvt/SloBERTa-2.0` does
+# not exist as an HF repo (401). Resolve with a monkey-patch or a pinned
+# transformers version before re-enabling. For now, leave empty so Block B
+# is a no-op.
+SLOBERTA_CANDIDATES: list[str] = []
 
 
 class Tee:
@@ -170,6 +176,9 @@ def block_b_sloberta() -> None:
     print("\n" + "=" * 72)
     print("BLOCK B — Slovenian backbone sanity on R_full (4 ep, seed 42)")
     print("=" * 72)
+    if not SLOBERTA_CANDIDATES:
+        print("  SLOBERTA_CANDIDATES is empty — block B skipped by configuration.")
+        return
     for slug in SLOBERTA_CANDIDATES:
         print(f"\n--- backbone={slug} ---")
         rc, out = run_cell([slug], [MIX_CHAMP],
